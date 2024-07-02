@@ -1,0 +1,58 @@
+[tool.poetry]
+name = "signaloid"
+version = "1.0.0"
+description = ""
+authors = [
+    "Signaloid <info@signaloid.com>",
+]
+
+
+[tool.poetry.group.dev.dependencies]
+wheel = "^0.42.0"
+pex = "^2.1.159"
+black = "^23.12.1"
+types-toml = "^0.10.8.7"
+pytest = "^7.4.4"
+mypy = "^1.8.0"
+flake8 = "^7.0.0"
+types-tqdm = "^4.66.0.20240106"
+pandas-stubs = "^2.2.0.240218"
+toml = "^0.10.2"
+syrupy = "^4.6.1"
+
+[build-system]
+requires = ["poetry_core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+numpy = "^1.26.4"
+pandas = "^1.3.5"
+matplotlib = "^3.8.3"
+seaborn = "^0.13.2"
+scipy = "^1.12.0"
+tqdm = "^4.66.2"
+
+[tool.mypy]
+warn_unused_configs = true
+strict = true
+
+[[tool.mypy.overrides]]
+module = [
+	"signaloid.distributional_information_plotting.*",
+	"signaloid.distributional.*",
+	"signaloid.emulation_rate.*",
+]
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_unused_ignores = false
+check_untyped_defs = false
+strict_equality = false
+
+[[tool.mypy.overrides]]
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# , --check-untyped-defs, --disallow-untyped-decorators, --warn-redundant-casts, --warn-unused-ignores,

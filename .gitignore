@@ -1,0 +1,22 @@
+.idea
+.venv/
+dist/
+.mypy_cache
+*.whl
+*.tar.gz
+requirements.txt
+info/
+bundle-build/
+*.spec
+__pycache__/
+.DS_Store
+.vscode
+
+#
+#	Binaries
+#
+*.o
+*.out
+*.sr
+*.map
+*.dump

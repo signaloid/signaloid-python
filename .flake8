@@ -1,0 +1,11 @@
+[flake8]
+max-complexity = 20
+max-line-length = 79
+
+extend-ignore = 
+    # Let formatting take care of line length (not flake8)
+    E501
+
+per-file-ignores =
+    src/signaloid/distributional_information_plotting/*: F841
+
