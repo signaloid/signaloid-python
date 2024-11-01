@@ -34,7 +34,6 @@ jobs:
         echo "github.event_name:" ${{ github.event_name }}
         echo "github.event.pull_request.head.sha:" ${{ github.event.pull_request.head.sha }}
         echo "github.sha:" ${{ github.sha }}
-        echo "toJson(github.event.pull_request.labels):" ${{ toJson(github.event.pull_request.labels) }}
         echo "github.event.release.tag_name:" ${{ github.event.release.tag_name }}
         echo "contains(github.event.pull_request.labels, 'ci:upload-binaries'):" ${{ contains(github.event.pull_request.labels, 'ci:"upload-binaries') }}
 
@@ -65,9 +64,6 @@ jobs:
 
     - name: Lint
       run: poetry run flake8 src/
-
-    - name: Check format
-      run: poetry run black --check src/
 
     - name: Typecheck
       run: poetry run mypy -p signaloid

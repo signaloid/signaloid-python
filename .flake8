@@ -5,6 +5,7 @@ max-line-length = 79
 extend-ignore = 
     # Let formatting take care of line length (not flake8)
     E501
+    E203
 
 per-file-ignores =
     src/signaloid/distributional_information_plotting/*: F841

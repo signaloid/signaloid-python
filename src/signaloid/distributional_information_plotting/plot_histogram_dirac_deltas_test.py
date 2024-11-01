@@ -1,24 +1,22 @@
-# fmt: off
-
-# 	Copyright (c) 2021, Signaloid.
+#   Copyright (c) 2021, Signaloid.
 #
-# 	Permission is hereby granted, free of charge, to any person obtaining a copy
-# 	of this software and associated documentation files (the "Software"), to
-# 	deal in the Software without restriction, including without limitation the
-# 	rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-# 	sell copies of the Software, and to permit persons to whom the Software is
-# 	furnished to do so, subject to the following conditions:
+#   Permission is hereby granted, free of charge, to any person obtaining a copy
+#   of this software and associated documentation files (the "Software"), to
+#   deal in the Software without restriction, including without limitation the
+#   rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+#   sell copies of the Software, and to permit persons to whom the Software is
+#   furnished to do so, subject to the following conditions:
 #
-# 	The above copyright notice and this permission notice shall be included in
-# 	all copies or substantial portions of the Software.
+#   The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
-# 	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# 	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# 	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# 	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# 	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# 	FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# 	DEALINGS IN THE SOFTWARE.
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+#   DEALINGS IN THE SOFTWARE.
 
 import unittest
 import random
@@ -28,7 +26,12 @@ from .plot_histogram_dirac_deltas import PlotHistogramDiracDeltas
 
 
 class TestCreateBinning(unittest.TestCase):
-    def test_create_binning_property_dirac_deltas_average_of_bins(self):
+    def test_create_binning_property_dirac_deltas_average_of_bins(self) -> None:
+        """
+        Tests that the binning created by the method `PlotHistogramDiracDeltas.create_binning()`
+        satisfies for each input Dirac delta the property that the average of the two bins that
+        surround the input Dirac delta is equal to the Dirac delta itself.
+        """
         probability_threshold = 1e-12
         position_threshold = 1e-12
         number_of_testcases = 1000
@@ -68,7 +71,14 @@ class TestCreateBinning(unittest.TestCase):
                 self.assertLess(abs(input_dirac_delta_masses[j] - probability_under_bins), probability_threshold)
                 self.assertLess(abs(input_dirac_delta_positions[j] - mean_of_bins), position_threshold)
 
-    def test_create_binning_property_preserve_ttr(self):
+        return
+
+    def test_create_binning_property_preserve_ttr(self) -> None:
+        """
+        Tests that the binning created by the method `PlotHistogramDiracDeltas.create_binning()`
+        preserves TTRs, that is, if the input Dirac deltas form a valid TTR, then the Dirac deltas
+        of the TTR of the created binning exactly concide with the input Dirac deltas.
+        """
         probability_threshold = 1e-12
         position_threshold = 1e-12
         number_of_testcases = 1000
@@ -107,17 +117,21 @@ class TestCreateBinning(unittest.TestCase):
                 self.assertLess(abs(input_ttr_masses[j] - binning_ttr_masses[j]), probability_threshold)
                 self.assertLess(abs(input_ttr_positions[j] - binning_ttr_positions[j]), position_threshold)
 
+        return
+
 
 def dirac_deltas_to_ttr(dirac_deltas, order, count=0):
     """
-    Computes TTR for an input ensemble of Dirac deltas.
+    Computes the TTR for an input ensemble of Dirac deltas.
+
     Args:
         dirac_deltas: Input ensemble of n Dirac deltas specified as [position, probability mass].
-                      Numpy array with shape (n, 2).
+            Numpy array with shape (n, 2).
         order: TTR order.
         count: Counts recursion level. Always use 0.
     Returns:
-        (ttr_positions, ttr_masses): Positions and probability masses of Dirac deltas in the output TTR.
+        ttr: The TTR of the input bin PDF, a (2 ** `order`)-length array of Dirac deltas
+            with each Dirac delta of the form np.array([position, mass]).
     """
     if count == 0:
         dirac_deltas[:, 1] /= sum(dirac_deltas[:, 1])
