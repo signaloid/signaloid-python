@@ -90,8 +90,10 @@ jobs:
         path: |
           ./dist/*
 
-    - name: Upload to release
+    # Upload the artifact to the GitHub release
+    - name: Upload Release Asset
       if: ${{ github.event_name == 'release' && startsWith(matrix.args.host, 'ubuntu') }}
-      run: gh release create "v${{ github.event.release.tag_name }}" dist/*
+      run: |
+        gh release upload ${{ github.event.release.tag_name }} dist/*
       env:
-       GH_TOKEN: ${{ github.token }}
+        GITHUB_TOKEN: ${{ github.token }}
