@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 
 
 class DistributionalValue:
-    def __init__(self) -> None:
+    def __init__(self, double_precision: bool = True) -> None:
         self.positions: NDArray[np.float64] = np.array([], dtype=np.float64)
         self.masses: NDArray[np.float64] = np.array([], dtype=np.float64)
         self.raw_masses: List[int] = []
@@ -38,6 +38,7 @@ class DistributionalValue:
         self.particle = False
         self.UR_type: Union[None, int, str] = None
         self.UR_order: Union[None, int] = None
+        self.double_precision = double_precision
         """
         properties
         """
@@ -62,6 +63,7 @@ class DistributionalValue:
     def _UxString(self):
         """
         Constructs the distributional part of the Ux string value for the `DistributionalValue`.
+        Uses either single or double precision for support positions based on self.double_precision.
 
         Returns:
             UxString: The Ux string for the `DistributionalValue`.
@@ -75,16 +77,23 @@ class DistributionalValue:
         UxString += struct.pack(">Q", len(self.positions)).hex().upper()
 
         # Mean value of distribution (double)               (8 bytes)
-        UxString += struct.pack(">1d", self.mean).hex().upper()
+        # Mean is always double precision regardless of self.double_precision
+        UxString += struct.pack(">d", self.mean).hex().upper()
 
         # Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
         UxString += struct.pack(">I", self.UR_order).hex().upper()
 
+        # Choose the format based on double_precision flag
+        position_format = ">d" if self.double_precision else ">f"
+
         # Pairs of:
-        # - Support position (double)                         (8 bytes)
-        # - Probability mass (uint64_t)                       (8 bytes)
+        # - Support position (double or float)              (8 or 4 bytes)
+        # - Probability mass (uint64_t)                     (8 bytes)
         for i in range(len(self.positions)):
-            UxString += struct.pack(">1d", self.positions[i]).hex().upper()
+            # Pack the position using either double or float precision
+            UxString += struct.pack(position_format, self.positions[i]).hex().upper()
+
+            # Probability mass is always uint64_t
             UxString += struct.pack(">Q", self.raw_masses[i]).hex().upper()
 
         return UxString
@@ -99,7 +108,7 @@ class DistributionalValue:
         return f"{id(self)}:{self.UR_type}-{self.UR_order}"
 
     @staticmethod
-    def parse(dist: Union[str, bytes]) -> Optional["DistributionalValue"]:
+    def parse(dist: Union[str, bytes], double_precision: bool = True) -> Optional["DistributionalValue"]:
         """
         Constructs a `DistributionalValue` after parsing an input that can be
         a UxString or a byte array.
@@ -109,20 +118,33 @@ class DistributionalValue:
         Returns:
             The constructed `DistributionalValue`.
         """
-        # Parse Hex string
-        if isinstance(dist, str):
-            return DistributionalValue._parse_ux_string(dist)
-        # Parse byte array
-        elif isinstance(dist, (bytes, bytearray)):
-            return DistributionalValue._parse_bytes(dist)
+        if double_precision:
+            # Parse Hex string
+            if isinstance(dist, str):
+                return DistributionalValue._parse_ux_string_dp(dist)
+            # Parse byte array
+            elif isinstance(dist, (bytes, bytearray)):
+                return DistributionalValue._parse_bytes_dp(dist)
+            else:
+                print("Error: ", type(dist))
+                return None
         else:
-            print("Error: ", type(dist))
-            return None
+            # Parse Hex string
+            if isinstance(dist, str):
+                return DistributionalValue._parse_ux_string_sp(dist)
+            # Parse byte array
+            elif isinstance(dist, (bytes, bytearray)):
+                return DistributionalValue._parse_bytes_sp(dist)
+            else:
+                print("Error: ", type(dist))
+                return None
 
     @staticmethod
-    def _parse_ux_string(text: str) -> Optional["DistributionalValue"]:
+    def _parse_ux_string_dp(text: str) -> Optional["DistributionalValue"]:
         """
         Constructs a `DistributionalValue` after parsing an input UxString.
+        This method assumes that the UXString encodes the DD positions as double
+        precision floats.
 
         Here is the specification of the format:
             - "Ux"                                              ( 2 characters)
@@ -135,10 +157,14 @@ class DistributionalValue:
             - Probability mass (uint64_t)                       (16 characters)
 
         Args:
-            The input UxString.
+            text: The input UxString.
         Returns:
-            The constructed `DistributionalValue`.
+            The constructed `DistributionalValue` or None if parsing fails.
+        Raises:
+            ValueError: If the UxString format is invalid or incomplete.
         """
+        if not text:
+            return None
 
         # Define the regex pattern to match an optional floating-point or integer number,
         # followed by 'Ux', and then hexadecimal characters
@@ -152,58 +178,227 @@ class DistributionalValue:
 
         particleValue = match.group(1)
         if particleValue is not None:
-            particleValue = float(particleValue)
-        UxString = "Ux" + match.group(2)
+            try:
+                particleValue = float(particleValue)
+            except ValueError:
+                return None
 
-        # Indices for UxString[] below are based on the specification in the
-        # docstring above.
+        hex_data = match.group(2)
+        UxString = "Ux" + hex_data
 
-        # Parse metadata
-        representation_type = int(UxString[2:4], 16)
-        mean_value = struct.unpack("!d", bytes.fromhex(UxString[20:36]))[0]
-        dirac_delta_count = int(UxString[36:44], 16)
+        # Check if the string has the minimum required length
+        # Minimum length = 2 (Ux) + 2 (repr) + 16 (samples) + 16 (mean) + 8 (count) = 44
+        min_length = 44
+        if len(UxString) < min_length:
+            return None
 
-        # Parse data
-        # Offset value 44 is the index at which the actual data starts (44 == 2+2+16+16+8).
-        offset = 44
-        support_position_list = []
-        probability_mass_list = []
-        raw_probability_mass_list = []
-        for _ in range(dirac_delta_count):
-            support_position_list.append(
-                struct.unpack("!d", bytes.fromhex(UxString[offset : (offset + 16)]))[0]
-            )
-            # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0.
-            # Divide by 0x8000000000000000 to get the float it represents.
-            mass = int(UxString[(offset + 16) : (offset + 32)], 16)
-            raw_probability_mass_list.append(mass)
-            probability_mass_list.append(mass / 0x8000000000000000)
-            # Set offset for next data pair.
-            offset += 32
+        try:
+            # Parse metadata
+            representation_type = int(UxString[2:4], 16)
+            mean_value = struct.unpack("!d", bytes.fromhex(UxString[20:36]))[0]
+            dirac_delta_count = int(UxString[36:44], 16)
 
-        # Initialize an instance of the class to return
-        dist_value = DistributionalValue()
-        dist_value.mean = mean_value
-        dist_value.UR_type = representation_type
-        dist_value.UR_order = dirac_delta_count
-        dist_value.positions = np.array(support_position_list, dtype=np.float64)
-        dist_value.masses = np.array(probability_mass_list, dtype=np.float64)
-        dist_value.raw_masses = raw_probability_mass_list
-        dist_value.particle_value = particleValue
+            # Validate dirac_delta_count - reasonable upper limit to prevent processing
+            # extremely large inputs that might be malicious
+            if dirac_delta_count < 0 or dirac_delta_count > 10000:
+                return None
 
-        # Calculate weighted sample variance
-        if dist_value.mean is not None:
-            dist_value.variance = np.average(
-                np.power((np.subtract(dist_value.positions, dist_value.mean)), 2),
-                weights=dist_value.masses,
-            )
+            # Calculate expected length based on dirac_delta_count
+            expected_length = min_length + (dirac_delta_count * 32)  # 16 for double + 16 for mass
+            if len(UxString) < expected_length:
+                return None
 
-        return dist_value
+            # Parse data - preallocate arrays for better performance
+            support_position_list = np.zeros(dirac_delta_count, dtype=np.float64)
+            probability_mass_list = np.zeros(dirac_delta_count, dtype=np.float64)
+            raw_probability_mass_list = []
+
+            # Constant for converting fixed-point probabilities
+            FIXED_POINT_ONE = 0x8000000000000000
+
+            # Offset value 44 is the index at which the actual data starts (44 == 2+2+16+16+8)
+            offset = 44
+            for i in range(dirac_delta_count):
+                # Support position is a double (16 characters)
+                try:
+                    support_position = struct.unpack(
+                        "!d", bytes.fromhex(UxString[offset:(offset + 16)])
+                    )[0]
+                    support_position_list[i] = support_position
+
+                    # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0
+                    mass_hex = UxString[(offset + 16):(offset + 32)]
+                    mass = int(mass_hex, 16)
+                    raw_probability_mass_list.append(mass)
+                    probability_mass_list[i] = mass / FIXED_POINT_ONE
+
+                    # Set offset for next data pair
+                    offset += 32
+                except (ValueError, struct.error, IndexError) as e:
+                    print((f"Error parsing UxString: {e}"))
+                    return None
+
+            # Validate that probability masses sum to approximately 1.0 (allowing for floating-point error)
+            probability_sum = np.sum(probability_mass_list)
+            if not (0.99 <= probability_sum <= 1.01):
+                pass  # We don't return None here as some use cases might have valid reasons for sum ≠ 1
+
+            # Initialize an instance of the class to return
+            dist_value = DistributionalValue(double_precision=True)  # Using double precision floats
+            dist_value.mean = mean_value
+            dist_value.UR_type = representation_type
+            dist_value.UR_order = dirac_delta_count
+            dist_value.positions = support_position_list  # Already a numpy array with correct dtype
+            dist_value.masses = probability_mass_list     # Already a numpy array
+            dist_value.raw_masses = raw_probability_mass_list
+            dist_value.particle_value = particleValue
+
+            # Calculate weighted sample variance (only if we have valid positions and masses)
+            if dist_value.mean is not None and dirac_delta_count > 0:
+                # Vectorized computation for better performance
+                squared_diffs = np.power(dist_value.positions - dist_value.mean, 2)
+                dist_value.variance = np.average(squared_diffs, weights=dist_value.masses)
+
+            return dist_value
+
+        except Exception as e:
+            # Catch-all for any unexpected errors during parsing
+            print((f"Error parsing UxString: {e}"))
+            return None
 
     @staticmethod
-    def _parse_bytes(buffer: Union[bytes, bytearray]) -> Optional["DistributionalValue"]:
+    def _parse_ux_string_sp(text: str) -> Optional["DistributionalValue"]:
+        """
+        Constructs a `DistributionalValue` after parsing an input UxString.
+        This method assumes that the UXString encodes the DD positions as single
+        precision floats.
+
+        Here is the specification of the format:
+            - "Ux"                                              ( 2 characters)
+            - Representation type (uint8_t)                     ( 2 characters)
+            - Number of samples (uint64_t)                      (16 characters) (unused)
+            - Mean value of distribution (double)               (16 characters)
+            - Number of non-zero mass Dirac deltas (uint32_t)   ( 8 characters)
+            Pairs of:
+            - Support position (float)                          ( 8 characters)
+            - Probability mass (uint64_t)                       (16 characters)
+
+        Args:
+            text: The input UxString.
+        Returns:
+            The constructed `DistributionalValue` or None if parsing fails.
+        Raises:
+            ValueError: If the UxString format is invalid or incomplete.
+        """
+        if not text:
+            return None
+
+        # Define the regex pattern to match an optional floating-point or integer number,
+        # followed by 'Ux', and then hexadecimal characters
+        pattern = r"^([-+]?\d*\.?\d+)?Ux([0-9A-Fa-f]+)$"
+
+        # Match the pattern
+        match = re.match(pattern, text)
+
+        if not match:
+            return None
+
+        particleValue = match.group(1)
+        if particleValue is not None:
+            try:
+                particleValue = float(particleValue)
+            except ValueError:
+                return None
+
+        hex_data = match.group(2)
+        UxString = "Ux" + hex_data
+
+        # Check if the string has the minimum required length
+        # Minimum length = 2 (Ux) + 2 (repr) + 16 (samples) + 16 (mean) + 8 (count) = 44
+        min_length = 44
+        if len(UxString) < min_length:
+            return None
+
+        try:
+            # Parse metadata
+            representation_type = int(UxString[2:4], 16)
+            mean_value = struct.unpack("!d", bytes.fromhex(UxString[20:36]))[0]
+            dirac_delta_count = int(UxString[36:44], 16)
+
+            # Validate dirac_delta_count - reasonable upper limit to prevent processing
+            # extremely large inputs that might be malicious
+            if dirac_delta_count < 0 or dirac_delta_count > 10000:
+                return None
+
+            # Calculate expected length based on dirac_delta_count
+            expected_length = min_length + (dirac_delta_count * 24)  # 8 for float + 16 for mass
+            if len(UxString) < expected_length:
+                return None
+
+            # Parse data - preallocate arrays for better performance
+            support_position_list = np.zeros(dirac_delta_count, dtype=np.float32)
+            probability_mass_list = np.zeros(dirac_delta_count, dtype=np.float64)
+            raw_probability_mass_list = []
+
+            # Constant for converting fixed-point probabilities
+            FIXED_POINT_ONE = 0x8000000000000000
+
+            # Offset value 44 is the index at which the actual data starts (44 == 2+2+16+16+8)
+            offset = 44
+            for i in range(dirac_delta_count):
+                # Support position is a float (8 characters)
+                try:
+                    support_position = struct.unpack(
+                        "!f", bytes.fromhex(UxString[offset:(offset + 8)])
+                    )[0]
+                    support_position_list[i] = support_position
+
+                    # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0
+                    mass_hex = UxString[(offset + 8):(offset + 24)]
+                    mass = int(mass_hex, 16)
+                    raw_probability_mass_list.append(mass)
+                    probability_mass_list[i] = mass / FIXED_POINT_ONE
+
+                    # Set offset for next data pair
+                    offset += 24
+                except (ValueError, struct.error, IndexError) as e:
+                    print((f"Error parsing UxString: {e}"))
+                    return None
+
+            # Validate that probability masses sum to approximately 1.0 (allowing for floating-point error)
+            probability_sum = np.sum(probability_mass_list)
+            if not (0.99 <= probability_sum <= 1.01):
+                pass  # We don't return None here as some use cases might have valid reasons for sum ≠ 1
+
+            # Initialize an instance of the class to return
+            dist_value = DistributionalValue(double_precision=False)  # Using single precision floats
+            dist_value.mean = mean_value
+            dist_value.UR_type = representation_type
+            dist_value.UR_order = dirac_delta_count
+            dist_value.positions = support_position_list  # Already a numpy array with correct dtype
+            dist_value.masses = probability_mass_list     # Already a numpy array
+            dist_value.raw_masses = raw_probability_mass_list
+            dist_value.particle_value = particleValue
+
+            # Calculate weighted sample variance (only if we have valid positions and masses)
+            if dist_value.mean is not None and dirac_delta_count > 0:
+                # Vectorized computation for better performance
+                squared_diffs = np.power(dist_value.positions - dist_value.mean, 2)
+                dist_value.variance = np.average(squared_diffs, weights=dist_value.masses)
+
+            return dist_value
+
+        except Exception as e:
+            # Catch-all for any unexpected errors during parsing
+            print((f"Error parsing UxString: {e}"))
+            return None
+
+    @staticmethod
+    def _parse_bytes_dp(buffer: Union[bytes, bytearray]) -> Optional["DistributionalValue"]:
         """
         Constructs a `DistributionalValue` after parsing an input byte array.
+        This method assumes that the byte array encodes the DD positions as double
+        precision floats.
 
         Here is the specification of the format:
             - Particle value (double)                           (8 bytes)
@@ -255,7 +450,82 @@ class DistributionalValue:
             probability_mass_list.append(mass / 0x8000000000000000)
 
         # Initialize an instance of the class to return
-        dist_value = DistributionalValue()
+        dist_value = DistributionalValue(double_precision=True)
+        dist_value.particle_value = particle_value
+        dist_value.mean = mean_value
+        dist_value.UR_type = representation_type
+        dist_value.UR_order = dirac_delta_count
+        dist_value.positions = np.array(support_position_list, dtype=np.float64)
+        dist_value.masses = np.array(probability_mass_list, dtype=np.float64)
+        dist_value.raw_masses = raw_probability_mass_list
+
+        # Calculate weighted sample variance
+        if dist_value.mean is not None:
+            dist_value.variance = np.average(
+                np.power((np.subtract(dist_value.positions, dist_value.mean)), 2),
+                weights=dist_value.masses,
+            )
+
+        return dist_value
+
+    @staticmethod
+    def _parse_bytes_sp(buffer: Union[bytes, bytearray]) -> Optional["DistributionalValue"]:
+        """
+        Constructs a `DistributionalValue` after parsing an input byte array.
+        This method assumes that the byte array encodes the DD positions as single
+        precision floats.
+
+        Here is the specification of the format:
+            - Particle value (double)                           (8 bytes)
+            - Representation type (uint8_t)                     (1 byte)
+            - Number of samples (uint64_t)                      (8 bytes) (unused)
+            - Mean value of distribution (double)               (8 bytes)
+            - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
+            Pairs of:
+            - Support position (double)                         (4 bytes)
+            - Probability mass (uint64_t)                       (8 bytes)
+
+        Args:
+            The input byte array.
+        Returns:
+            The constructed `DistributionalValue`.
+        """
+        # Interpret the particle value and remove from buffer
+        particle_value = struct.unpack("1d", buffer[:8])[0]
+        buffer = buffer[8:]
+
+        representation_type = buffer[0]
+
+        mean_value = struct.unpack("1d", buffer[9:17])[0]
+        dirac_delta_count = struct.unpack("I", buffer[17:21])[0]
+
+        # clean buffer
+        buffer = buffer[21:]
+
+        support_position_list = []
+        probability_mass_list = []
+        raw_probability_mass_list = []
+        # Ensure buffer length is divisible by 16
+        if len(buffer) % 12 != 0:
+            raise ValueError("Buffer length must be divisible by 12")
+
+        # Iterate through the buffer in sections of 16 bytes
+        for i in range(0, len(buffer), 12):
+            support_position_hex = buffer[i: i + 4]
+            mass_hex = buffer[i + 4: i + 12]
+
+            support_position = struct.unpack("1f", support_position_hex)[0]
+            mass = struct.unpack("<Q", mass_hex)[0]
+
+            support_position_list.append(support_position)
+            raw_probability_mass_list.append(mass)
+
+            # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0.
+            # Divide by 0x8000000000000000 to get the float it represents.
+            probability_mass_list.append(mass / 0x8000000000000000)
+
+        # Initialize an instance of the class to return
+        dist_value = DistributionalValue(double_precision=False)
         dist_value.particle_value = particle_value
         dist_value.mean = mean_value
         dist_value.UR_type = representation_type
@@ -276,6 +546,7 @@ class DistributionalValue:
     def bytes(self) -> bytes:
         """
         Constructs the byte array for the `DistributionalValue`.
+        Uses either single or double precision for support positions based on self.double_precision.
 
         Returns:
             The byte array for the `DistributionalValue`.
@@ -287,16 +558,18 @@ class DistributionalValue:
         # Create byte representation
         byte_representation = bytearray()
 
+        # Format specification:
         # - Particle value (double)                           (8 bytes)
         # - Representation type (uint8_t)                     (1 byte)
         # - Number of samples (uint64_t)                      (8 bytes)
         # - Mean value of distribution (double)               (8 bytes)
         # - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
         # Pairs of:
-        # - Support position (double)                         (8 bytes)
+        # - Support position (double or float)                (8 or 4 bytes)
         # - Probability mass (uint64_t)                       (8 bytes)
 
         # - Particle value (double)                           (8 bytes)
+        # Particle value is always double precision
         byte_representation += struct.pack("1d", particle_value)
 
         # - Representation type (uint8_t)                     (1 byte)
@@ -306,16 +579,23 @@ class DistributionalValue:
         byte_representation += struct.pack("<Q", len(self.positions))
 
         # - Mean value of distribution (double)               (8 bytes)
+        # Mean is always double precision
         byte_representation += struct.pack("1d", self.mean)
 
         # - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
         byte_representation += struct.pack("<I", self.UR_order)
 
+        # Choose the format based on double_precision flag
+        position_format = "1d" if self.double_precision else "1f"
+
         # Pairs of:
-        # - Support position (double)                         (8 bytes)
+        # - Support position (double or float)                (8 or 4 bytes)
         # - Probability mass (uint64_t)                       (8 bytes)
         for i in range(len(self.positions)):
-            byte_representation += struct.pack("1d", self.positions[i])
+            # Pack the position using either double or float precision
+            byte_representation += struct.pack(position_format, self.positions[i])
+
+            # Probability mass is always uint64_t
             byte_representation += struct.pack("<Q", self.raw_masses[i])
 
         return bytes(byte_representation)
