@@ -27,11 +27,11 @@ from numpy.typing import NDArray
 
 class DistributionalValue:
     def __init__(self) -> None:
-        self.positions: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self.masses: NDArray[np.float_] = np.array([], dtype=np.float_)
+        self.positions: NDArray[np.float64] = np.array([], dtype=np.float64)
+        self.masses: NDArray[np.float64] = np.array([], dtype=np.float64)
         self.raw_masses: List[int] = []
-        self.adjusted_masses: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self.widths: NDArray[np.float_] = np.array([], dtype=np.float_)
+        self.adjusted_masses: NDArray[np.float64] = np.array([], dtype=np.float64)
+        self.widths: NDArray[np.float64] = np.array([], dtype=np.float64)
         self.mean: Union[None, float] = None
         self.particle_value: Union[None, float] = None
         self.variance: Union[None, float] = None
@@ -186,8 +186,8 @@ class DistributionalValue:
         dist_value.mean = mean_value
         dist_value.UR_type = representation_type
         dist_value.UR_order = dirac_delta_count
-        dist_value.positions = np.array(support_position_list, dtype=np.float_)
-        dist_value.masses = np.array(probability_mass_list, dtype=np.float_)
+        dist_value.positions = np.array(support_position_list, dtype=np.float64)
+        dist_value.masses = np.array(probability_mass_list, dtype=np.float64)
         dist_value.raw_masses = raw_probability_mass_list
         dist_value.particle_value = particleValue
 
@@ -260,8 +260,8 @@ class DistributionalValue:
         dist_value.mean = mean_value
         dist_value.UR_type = representation_type
         dist_value.UR_order = dirac_delta_count
-        dist_value.positions = np.array(support_position_list, dtype=np.float_)
-        dist_value.masses = np.array(probability_mass_list, dtype=np.float_)
+        dist_value.positions = np.array(support_position_list, dtype=np.float64)
+        dist_value.masses = np.array(probability_mass_list, dtype=np.float64)
         dist_value.raw_masses = raw_probability_mass_list
 
         # Calculate weighted sample variance
@@ -481,8 +481,8 @@ class DistributionalValue:
             *[(x, y) for x, y in zip(self.positions, self.masses) if y != 0]
         )
         # zip() returns tuple
-        self.positions = np.array(list(filtered_positions), dtype=np.float_)
-        self.masses = np.array(list(filtered_masses), dtype=np.float_)
+        self.positions = np.array(list(filtered_positions), dtype=np.float64)
+        self.masses = np.array(list(filtered_masses), dtype=np.float64)
         self._has_no_zero_mass = True
 
         return
