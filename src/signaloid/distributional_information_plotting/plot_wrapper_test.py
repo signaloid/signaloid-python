@@ -18,19 +18,22 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
-import unittest
 import csv
-from .plot_wrapper import plot
-from signaloid.distributional import DistributionalValue
-from typing import Optional, List
-import tempfile
-import shutil
 import os
+import shutil
+import tempfile
+from typing import Optional
+import unittest
+
+from signaloid.distributional.distributional import DistributionalValue
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import PlotData
+
+from .plot_wrapper import plot
 
 
 def read_ux_strings_from_csv(
     csv_filename: str
-) -> Optional[List[str]]:
+) -> Optional[list[str]]:
     """
     Reads Ux strings from a csv file
 
@@ -39,7 +42,7 @@ def read_ux_strings_from_csv(
     Returns:
         ux_strings: list of Ux strings
     """
-    ux_strings = []
+    ux_strings: list[str] = []
     with open(csv_filename, 'r') as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
@@ -49,17 +52,17 @@ def read_ux_strings_from_csv(
 
 
 class TestPlotting(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # Create a temporary directory for testing
         self.test_dir = tempfile.mkdtemp()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         # Remove the temporary directory even if the test fails
         shutil.rmtree(self.test_dir)
 
     def test_plot_wrapper(
         self,
-        input_filename="src/signaloid/distributional/test_ux_value_pairs.csv"
+        input_filename: str = "src/signaloid/distributional/test_ux_value_pairs.csv"
     ) -> None:
         """
         Test parsing and plotting Ux Strings
@@ -69,15 +72,22 @@ class TestPlotting(unittest.TestCase):
         ux_strings = read_ux_strings_from_csv(input_filename)
         self.assertIsNotNone(ux_strings)
 
-        if ux_strings is not None:
-            # Run the save function for each filepath
-            for i in range(len(ux_strings)):
-                distValue = DistributionalValue.parse(ux_strings[i])
-                self.assertIsNotNone(distValue)
-                filepath = os.path.join(self.test_dir, f'file{i}.png')
-                if distValue is not None:
-                    plot(distValue, path=filepath, save=True)
-                self.assertTrue(os.path.exists(filepath), f"File was not created: {filepath}")
+        if ux_strings is None:
+            return
+
+        # Run the save function for each filepath
+        for i, ux_string in enumerate(ux_strings):
+            distValue = DistributionalValue.parse(ux_string)
+            self.assertIsNotNone(distValue)
+            if distValue is None:
+                return
+
+            plot_data = PlotData(distValue)
+            self.assertIsNotNone(plot_data, "Failed to parse data")
+
+            filepath = os.path.join(self.test_dir, f'file{i}.png')
+            plot(plot_data, path=filepath, save=True)
+            self.assertTrue(os.path.exists(filepath), f"File was not created: {filepath}")
 
 
 if __name__ == "__main__":
