@@ -18,14 +18,13 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
-from typing import Any, Optional, Dict, Tuple
+import math
+from typing import Any, Optional, Union
+
 import matplotlib
 import matplotlib.pyplot as plt
-import math
-from signaloid.distributional import DistributionalValue
-from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
-    PlotHistogramDiracDeltas,
-)
+
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import PlotData
 
 
 def printv(
@@ -43,29 +42,25 @@ def printv(
     if verbose:
         print(formatString % args)
 
-    return
-
 
 def plot(
-    distribution: DistributionalValue,
+    plot_data: PlotData,
     path: str = "./plot.png",
-    plotting_resolution: int = 128,
     plot_expected_value_line: bool = True,
     no_special_y: bool = False,
     save: bool = False,
     verbose: bool = False,
-    x_lim: Optional[Tuple[float, float]] = None,
-    y_lim: Optional[Tuple[float, float]] = None,
+    x_lim: Optional[tuple[float, float]] = None,
+    y_lim: Optional[tuple[float, float]] = None,
     x_label: Optional[str] = None,
     x_tick_label_rotation: Optional[float] = None,
     font_size: int = 20,
-    matplotlib_rc_params_override: Optional[Dict[str, str]] = None,
+    matplotlib_rc_params_override: Optional[dict[str, str]] = None,
 ) -> bool:
     """
     Args:
-        distribution: `DistributionalValue` to plot.
+        plot_data: `PlotData` to plot.
         path: Path to save the output if saving is enabled.
-        plotting_resolution: Resolution of the plotted binning.
         plot_expected_value_line: Flag toggling whether the plot should have a vertical
             line at the expected value of the input distribution.
         no_special_y: Flag toggling the plotting of special values, e.g., `NaN`, `INF`, and `-INF`.
@@ -80,19 +75,8 @@ def plot(
     Returns:
         `True` if successful, `False` else.
     """
-    if (
-        distribution is None or
-        distribution.mean is None or
-        distribution.UR_order is None
-    ):
-        printv(verbose, "Failed to load data")
-        return False
 
-    distribution.drop_zero_mass_positions()
-
-    ph = PlotHistogramDiracDeltas()
-
-    matplotlib_rcParams_update_defaults = {
+    matplotlib_rcParams_update_defaults: dict[str, Union[int, str, bool]] = {
         "font.size": font_size,
         "figure.facecolor": "FFFFFF30",
         "axes.facecolor": "FFFFFF30",
@@ -105,53 +89,48 @@ def plot(
 
     matplotlib.rcParams.update(matplotlib_rcParams_update_defaults)
 
-    axes_needed = 1
-    any_special_value = False
-    gridspec = None
-
-    any_minusinf = any([math.isinf(x) and x < 0 for x in distribution.positions])
-    any_inf = any([math.isinf(x) and x > 0 for x in distribution.positions])
-    any_nan = any([math.isnan(x) for x in distribution.positions])
-    printv(verbose, f"any_minusinf={any_minusinf}")
-    printv(verbose, f"any_inf={any_inf}")
-    printv(verbose, f"any_nan={any_nan}")
-
-    if any_minusinf or any_inf or any_nan:
-        axes_needed += 1
-        any_special_value = True
-        gridspec = {"width_ratios": [4.2, 1]}
-
     fig, axes = plt.subplots(
         nrows=1,
-        ncols=axes_needed,
+        ncols=2 if plot_data.dist.has_special_values else 1,
         sharey=False,
-        figsize=(10 + (3 if any_special_value else 0), 6),
-        gridspec_kw=gridspec,
+        figsize=(10 + (3 if plot_data.dist.has_special_values else 0), 6),
+        gridspec_kw={"width_ratios": [4.2, 1]} if plot_data.dist.has_special_values else None,
     )
 
-    if not any_special_value:
+    if not plot_data.dist.has_special_values:
         # Force axes to be a list (Thanks pyplot for the wonderful semantics)
         axes = [axes]
 
     fig.sca(axes[0])
     printv(verbose, "Plotting...")
-    max_value = 0.0
-    any_finite_values = any([math.isfinite(x) for x in distribution.positions])
-    if any_finite_values:
-        # Set plot resolution to (N*2) where N is machine representation
-        machine_representation = 2 ** math.floor(
-            math.log2(distribution.UR_order)
-        )  # type: ignore[arg-type]
-        pr = min((machine_representation * 2), plotting_resolution)
-        assert isinstance(ph, PlotHistogramDiracDeltas)
-        (min_range, max_range, max_value) = ph.plot_histogram_dirac_deltas(
-            [distribution],
-            plotting_resolution=pr,
-            colors=["#33A333", "#A569BD", "#F1C40F"],
+
+    # If there is only one finite Dirac delta, then plot just an
+    # arrow representing a Dirac delta.
+    if len(plot_data.positions) == 1:
+        plt.annotate(
+            text="",
+            xy=(plot_data.positions[0], plot_data.masses[0]),
+            xytext=(plot_data.positions[0], 0),
+            arrowprops={
+                "arrowstyle": "->",
+                "facecolor": "black",
+                "lw": 3
+            },
+        )
+    else:
+        # Plot the binning.
+        plt.bar(
+            x=plot_data.positions[:-1],
+            height=plot_data.masses,
+            width=plot_data.widths,
+            align="edge",
+            edgecolor="#33A333",
+            facecolor="#33A333" + "40",
+            hatch="\\"
         )
 
     # Default kwargs for plt.annotate
-    annotation_default_args: Dict[str, Any] = {
+    annotation_default_args: dict[str, Any] = {
         "xycoords": ("data", "axes fraction"),
         "textcoords": "offset points",
         "xytext": (3, 0),
@@ -164,67 +143,62 @@ def plot(
     # Plot mean value (if finite) and standard deviation (if available)
     if (
         plot_expected_value_line is True
-        and distribution.mean is not None
-        and math.isfinite(distribution.mean)
+        and plot_data.dist.mean is not None
+        and math.isfinite(plot_data.dist.mean)
     ):
-
-        axes[0].axvline(distribution.mean, lw=2, color="#29782d")
+        axes[0].axvline(plot_data.dist.mean, lw=2, color="#29782d")
         plt.annotate(
             "$E(X)$",
-            (distribution.mean, 0.9),
+            (plot_data.dist.mean, 0.9),
             color="#206024",
             **annotation_default_args,
         )
 
-    if any_special_value:
+    if plot_data.dist.has_special_values:
         fig.sca(axes[1])
-        ph.plot_special_values_barplot(distribution)
-
-    printv(verbose, "Done plotting.")
+        plt.bar(
+            x=[
+                "NaN",
+                "-Inf",
+                "Inf"
+            ],
+            height=[
+                plot_data.dist.nan_dirac_delta.mass,
+                plot_data.dist.neg_inf_dirac_delta.mass,
+                plot_data.dist.pos_inf_dirac_delta.mass,
+            ],
+            width=0.55,
+            edgecolor="#33A333",
+            facecolor="#757575" + "40",
+            hatch="\\",
+        )
 
     printv(verbose, "Adjusting plot...")
     for i, ax in enumerate(axes):
         if i == 0:
-            if any_finite_values:
-                # This prevents the plots failing if mean value is
-                # incorrect and way off the range.
-                if (
-                    math.isnan(distribution.mean) or
-                    math.isinf(distribution.mean)
-                ):  # type: ignore[arg-type]
-                    min_x = min_range
-                    max_x = max_range
-                else:
-                    min_x = min(distribution.mean, min_range)
-                    max_x = max(distribution.mean, max_range)
+            if len(plot_data.positions):
+                if x_lim is None:
+                    # This prevents the plots failing if mean value is
+                    # incorrect and way off the range.
+                    if (
+                        plot_data.dist.mean is None
+                        or math.isnan(plot_data.dist.mean)
+                        or math.isinf(plot_data.dist.mean)
+                    ):  # type: ignore[arg-type]
+                        min_x = plot_data.min_range
+                        max_x = plot_data.max_range
+                    else:
+                        min_x = min(plot_data.dist.mean, plot_data.min_range)
+                        max_x = max(plot_data.dist.mean, plot_data.max_range)
+                    range_spacing = 0.05 * (max_x - min_x)
+                    x_lim = (min_x - range_spacing, max_x + range_spacing)
+                ax.set_xlim(*x_lim)
 
-                range_spacing = 0.05 * (max_x - min_x)
+                if y_lim is None:
+                    y_lim = (0, 1.1 * plot_data.max_value)
+                ax.set_ylim(*y_lim)
 
-                guessed_x_lim = (min_x - range_spacing, max_x + range_spacing)
-                printv(
-                    verbose, f"Would set x_lim to {guessed_x_lim} (override is {x_lim})"
-                )
-
-                if x_lim is not None:
-                    ax.set_xlim(*x_lim)
-                else:
-                    ax.set_xlim(*guessed_x_lim)
-
-                guessed_y_lim = (0, 1.1 * max_value)
-                printv(
-                    verbose, f"Would set y_lim to {guessed_y_lim} (override is {y_lim})"
-                )
-
-                if y_lim is not None:
-                    ax.set_ylim(*y_lim)
-                else:
-                    ax.set_ylim(*guessed_y_lim)
-
-            if x_label:
-                ax.set_xlabel(x_label)
-            else:
-                ax.set_xlabel("Distribution Support")
-
+            ax.set_xlabel(x_label if x_label else "Distribution Support")
             ax.set_ylabel("Probability Density")
         else:
             ax.set_ylim(0, 1)

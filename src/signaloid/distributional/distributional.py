@@ -18,631 +18,497 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+import math
+import sys
 import re
 import struct
-from typing import List, Optional, Union, Tuple
-import numpy as np
-from numpy.typing import NDArray
+
+if sys.implementation.name != 'circuitpython':
+    from typing import Optional, Union
+
+    # Use numpy for accelerated computing
+    import numpy as np
+    from numpy.typing import NDArray
+else:
+    # Use the extended version of ulab's numpy when running on CircuitPython
+    from signaloid.circuitpython.extended_ulab_numpy import np  # type: ignore[no-redef]
+
+from signaloid.distributional.dirac_delta import DiracDelta
+
+# The format strings used with struct.pack & struct.unpack for parsing and
+# dumping `DistributionalValue` data.
+STRUCT_FORMATS: dict[str, dict[str, str]] = {
+    "str": {
+        "particle": "",
+        "UR_type": ">B",
+        "sample_count": ">Q",
+        "mean": ">d",
+        "UR_order": ">I",
+        "position_single": ">f",
+        "position_double": ">d",
+        "mass": ">Q",
+    },
+    "bytes": {
+        "particle": "<d",
+        "UR_type": "<B",
+        "sample_count": "<Q",
+        "mean": "<d",
+        "UR_order": "<I",
+        "position_single": "<f",
+        "position_double": "<d",
+        "mass": "<Q",
+    }
+}
 
 
 class DistributionalValue:
-    def __init__(self, double_precision: bool = True) -> None:
-        self.positions: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self.masses: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self.raw_masses: List[int] = []
-        self.adjusted_masses: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self.widths: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self.mean: Union[None, float] = None
-        self.particle_value: Union[None, float] = None
-        self.variance: Union[None, float] = None
-        self.particle = False
-        self.UR_type: Union[None, int, str] = None
-        self.UR_order: Union[None, int] = None
+    def __init__(
+        self,
+        particle_value: Optional[float] = None,
+        UR_type: Optional[int] = None,
+        dirac_deltas: Optional[list[DiracDelta]] = None,
+        double_precision: bool = True
+    ) -> None:
+        self.particle_value: Optional[float] = particle_value
+        self.UR_type: Optional[int] = UR_type
+        self._dirac_deltas: list[DiracDelta] = dirac_deltas if dirac_deltas is not None else []
         self.double_precision = double_precision
         """
         properties
         """
-        self._has_no_zero_mass: Union[None, bool] = None
-        self._is_finite: Union[None, bool] = None
-        self._is_sorted: Union[None, bool] = None
-        self._is_cured: Union[None, bool] = None
-        self._is_full_valid_TTR: Union[None, bool] = None
+        self._mean: Optional[float] = None
+        self._variance: Optional[float] = None
 
-    def __str__(self):
+        self.nan_dirac_delta: DiracDelta = DiracDelta(position=np.nan, mass=np.nan)
+        self.neg_inf_dirac_delta: DiracDelta = DiracDelta(position=-np.inf, mass=np.nan)
+        self.pos_inf_dirac_delta: DiracDelta = DiracDelta(position=np.inf, mass=np.nan)
+
+        self._has_no_zero_mass: Optional[bool] = None
+        self._is_finite: Optional[bool] = None
+        self._is_sorted: Optional[bool] = None
+        self._is_cured: Optional[bool] = None
+        self._is_full_valid_TTR: Optional[bool] = None
+
+    @property
+    def dirac_deltas(self) -> list[DiracDelta]:
+        """The list of all the Dirac Deltas of the DistributionalValue.
+
+        :return: The list of the Dirac Deltas.
+        :rtype: list[DiracDelta]
         """
-        Constructs the Ux string with particle value for the `DistributionalValue`.
+        return self._dirac_deltas
+
+    @property
+    def finite_dirac_deltas(self) -> list[DiracDelta]:
+        """The list of all the finite Dirac Deltas of the DistributionalValue.
+
+        :return: The list of the finite Dirac Deltas.
+        :rtype: list[DiracDelta]
+        """
+        self.sort()
+        if self.has_special_values:
+            return self.dirac_deltas[:-3]
+
+        return self.dirac_deltas
+
+    @property
+    def positions(self) -> NDArray[np.float_]:
+        """The list af all the Dirac Delta positions.
+
+        :return: The list of all the Dirac Delta positions.
+        :rtype: NDArray[np.float_]
+        """
+        arr: NDArray[np.float_] = np.array([dd.position for dd in self.dirac_deltas], dtype=np.float_)
+        return arr
+
+    @property
+    def masses(self) -> NDArray[np.float_]:
+        """The list af all the Dirac Delta floating-point masses.
+
+        :return: The list of all the Dirac Delta floating-point masses.
+        :rtype: NDArray[np.float_]
+        """
+        arr: NDArray[np.float_] = np.array([dd.mass for dd in self.dirac_deltas], dtype=np.float_)
+        return arr
+
+    @property
+    def raw_masses(self) -> NDArray[np.uint64]:
+        """The list af all the Dirac Delta fixed-point masses.
+
+        :return: The list of all the Dirac Delta fixed-point masses.
+        :rtype: NDArray[np.uint64]
+        """
+        arr: NDArray[np.uint64] = np.array([dd.raw_mass for dd in self.dirac_deltas], dtype=np.uint64)
+        return arr
+
+    @property
+    def mean(self) -> Optional[float]:
+        """The mean position of all the Dirac Deltas.
+
+        :return: The mean position of all the Dirac Deltas.
+        :rtype: Optional[float]
+        """
+        if self._mean is None:
+            self.calculate_mean()
+
+        return self._mean
+
+    @mean.setter
+    def mean(self, mean: Optional[float]):
+        """Sets the mean position of all the Dirac Deltas explicitly (it does
+        not interfere with the Dirac Deltas list).
+
+        :param mean: The mean value to use.
+        :type mean: Optional[float]
+        """
+        self._mean = mean
+
+    def calculate_mean(self) -> Optional[float]:
+        """Calculated the mean position of all the Dirac Deltas based on the
+        Dirac Deltas list.
+
+        :return: The calculated mean position of all the Dirac Deltas.
+        :rtype: float
+        """
+        if self.nan_dirac_delta.mass > 0:
+            self._mean = np.nan
+        elif self.neg_inf_dirac_delta.mass > 0 and self.pos_inf_dirac_delta.mass > 0:
+            self._mean = np.nan
+        elif self.neg_inf_dirac_delta.mass > 0:
+            self._mean = -np.inf
+        elif self.pos_inf_dirac_delta.mass > 0:
+            self._mean = np.inf
+        else:
+            total_mass: float = 0
+            total_weighted_position: float = 0
+            for dd in self.dirac_deltas:
+                total_weighted_position += dd.position * dd.mass
+                total_mass += dd.mass
+
+            self._mean = total_weighted_position / total_mass
+
+        return self._mean
+
+    @property
+    def UR_order(self) -> int:
+        """The number of non-zero mass Dirac Deltas.
+
+        :return: The number of non-zero mass Dirac Deltas.
+        :rtype: int
+        """
+        return len(self.dirac_deltas)
+
+    @property
+    def variance(self) -> Optional[float]:
+        """The positional variance of all the Dirac Deltas.
+
+        :return: The positional variance of all the Dirac Deltas.
+        :rtype: Optional[float]
+        """
+        if self._variance is None:
+            self.calculate_variance()
+
+        return self._variance
+
+    def calculate_variance(self) -> Optional[float]:
+        """Calculates the positional variance of all the Dirac Deltas.
+
+        :return: The calculated positional variance of all the Dirac Deltas.
+        :rtype: Optional[float]
+        """
+        # Calculate weighted sample variance
+        if (
+            self.mean is None
+            or self.UR_order == 0
+            or not np.isfinite(self.mean)
+        ):
+            self._variance = None
+        else:
+            total_mass: float = 0
+            total_weighted_squared_diffs: float = 0
+            for dd in self.dirac_deltas:
+                total_weighted_squared_diffs += (
+                    ((dd.position - self.mean) ** 2)
+                    * dd.mass
+                )
+                total_mass += dd.mass
+
+            self._variance = total_weighted_squared_diffs / total_mass
+
+        return self._variance
+
+    @property
+    def has_special_values(self) -> bool:
+        """Property that identifies if there are non-zero mass Dirac Deltas,
+        with non-finite position, i.e. `NaN`, `-Inf`, `Inf`.
+
+        :return: `True` if there are non-zero mass, non-finite position Dirac Deltas,
+        `False` otherwise.
+        :rtype: bool
+        """
+        return bool(
+            self.nan_dirac_delta.mass > 0
+            or self.neg_inf_dirac_delta.mass > 0
+            or self.pos_inf_dirac_delta.mass > 0
+        )
+
+    def __repr__(self) -> str:
+        """Constructs the representation type for the `DistributionalValue`.
+
+        :return: The representation type for the `DistributionalValue`.
+        :rtype: str
+        """
+        return f"{id(self)}:{self.UR_type}-{self.UR_order}"
+
+    def __str__(self) -> str:
+        """Constructs the Ux-string representation of the `DistributionalValue`.
+
+        :return: The `DistributionalValue` Ux-string.
+        :rtype: str
+        """
+        result = self.export(to_str=True)
+        return result if isinstance(result, str) else ""
+
+    def __bytes__(self) -> bytes:
+        """Constructs the byte array for the `DistributionalValue`. Uses either
+        single or double precision for support positions based on `self.double_precision`.
+
+        :return: The byte array for the `DistributionalValue`.
+        :rtype: bytes
+        """
+
+        result = self.export(to_str=False)
+        return result if isinstance(result, bytes) else bytes()
+
+    def export(self, to_str: bool = True) -> Union[str, bytes]:
+        """
+        Constructs the Ux string/Ux bytes with particle value for the `DistributionalValue`.
+
+        Args:
+            to_str: Weather to export a Ux string or a Ux bytes
+                    - True: Export a Ux string
+                    - False: Export a Ux bytes
 
         Returns:
-            UxString: The Ux string with particle value for the `DistributionalValue`.
-        """
-        particleStr = ""
-        if self.particle_value is not None:
-            particleStr = str(self.particle_value)
-        return particleStr + self._UxString()
+            The Ux string or the Ux bytes with particle value for the `DistributionalValue`.
 
-    def _UxString(self):
-        """
-        Constructs the distributional part of the Ux string value for the `DistributionalValue`.
-        Uses either single or double precision for support positions based on self.double_precision.
+        Ux-string format specification:
+            - Particle value (double in string format)
+            - "Ux"                                              (   2 chars)
+            - Representation type (uint8_t)                     (   2 chars)
+            - Number of samples (uint64_t)                      (  16 chars) (unused)
+            - Mean value of distribution (double)               (  16 chars)
+            - Number of non-zero mass Dirac deltas (uint32_t)   (   8 chars)
+            - Pairs of:
+                - Support position (float/double)               (8/16 chars)
+                - Probability mass (uint64_t)                   (  16 chars)
 
-        Returns:
-            UxString: The Ux string for the `DistributionalValue`.
+        Ux-bytes specification:
+            - Particle value (double)                           (  8 bytes)
+            - Representation type (uint8_t)                     (  1 byte )
+            - Number of samples (uint64_t)                      (  8 bytes) (unused)
+            - Mean value of distribution (double)               (  8 bytes)
+            - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+            - Pairs of:
+                - Support position (float/double)               (4/8 bytes)
+                - Probability mass (uint64_t)                   (  8 bytes)
         """
-        UxString = "Ux"
+
+        # Create byte representation
+        buffer: bytes = bytes()
+        UxString: str = ""
+
+        if to_str:
+            # Particle value (double in string format)
+            UxString += str(self.particle_value) if self.particle_value is not None else ""
+            UxString += "Ux"
+
+            fmt = STRUCT_FORMATS["str"]
+        else:
+            # Particle value (double)                           (8 bytes)
+            particle_value = self.particle_value if self.particle_value is not None else 0
+            fmt = STRUCT_FORMATS["bytes"]
+            buffer += struct.pack(fmt["particle"], particle_value)
 
         # Representation type (uint8_t)                     (1 byte)
-        UxString += struct.pack("B", self.UR_type).hex().upper()
+        buffer += struct.pack(fmt["UR_type"], self.UR_type)
 
         # Number of samples (uint64_t)                      (8 bytes)
-        UxString += struct.pack(">Q", len(self.positions)).hex().upper()
+        buffer += struct.pack(fmt["sample_count"], self.UR_order)
 
         # Mean value of distribution (double)               (8 bytes)
         # Mean is always double precision regardless of self.double_precision
-        UxString += struct.pack(">d", self.mean).hex().upper()
+        buffer += struct.pack(fmt["mean"], self.mean)
 
         # Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
-        UxString += struct.pack(">I", self.UR_order).hex().upper()
+        buffer += struct.pack(fmt["UR_order"], self.UR_order)
 
         # Choose the format based on double_precision flag
-        position_format = ">d" if self.double_precision else ">f"
+        position_format = fmt["position_double" if self.double_precision else "position_single"]
 
         # Pairs of:
         # - Support position (double or float)              (8 or 4 bytes)
         # - Probability mass (uint64_t)                     (8 bytes)
-        for i in range(len(self.positions)):
+        for dd in self.dirac_deltas:
             # Pack the position using either double or float precision
-            UxString += struct.pack(position_format, self.positions[i]).hex().upper()
+            buffer += struct.pack(position_format, dd.position)
 
             # Probability mass is always uint64_t
-            UxString += struct.pack(">Q", self.raw_masses[i]).hex().upper()
+            buffer += struct.pack(fmt["mass"], dd.raw_mass)
 
-        return UxString
+        if to_str:
+            return UxString + buffer.hex().upper()
 
-    def __repr__(self):
-        """
-        Constructs the representation type for the `DistributionalValue`.
-
-        Returns:
-            The representation type for the `DistributionalValue`.
-        """
-        return f"{id(self)}:{self.UR_type}-{self.UR_order}"
+        return buffer
 
     @staticmethod
-    def parse(dist: Union[str, bytes], double_precision: bool = True) -> Optional["DistributionalValue"]:
+    def parse(
+        dist: Union[str, bytes],
+        double_precision: bool = True
+    ) -> "Optional[DistributionalValue]":
         """
         Constructs a `DistributionalValue` after parsing an input that can be
         a UxString or a byte array.
 
         Args:
             dist: The input UxString or byte array.
+            double_precision: The floating point representation precision.
+                - true: double precision
+                - false: single precision
         Returns:
-            The constructed `DistributionalValue`.
+            The constructed `DistributionalValue` or None if parsing fails.
+
+        Ux-string format specification:
+            - Particle value (double in string format)
+            - "Ux"                                              (   2 chars)
+            - Representation type (uint8_t)                     (   2 chars)
+            - Number of samples (uint64_t)                      (  16 chars) (unused)
+            - Mean value of distribution (double)               (  16 chars)
+            - Number of non-zero mass Dirac deltas (uint32_t)   (   8 chars)
+            - Pairs of:
+                - Support position (float/double)               (8/16 chars)
+                - Probability mass (uint64_t)                   (  16 chars)
+
+        Ux-bytes specification:
+            - Particle value (double)                           (  8 bytes)
+            - Representation type (uint8_t)                     (  1 byte )
+            - Number of samples (uint64_t)                      (  8 bytes) (unused)
+            - Mean value of distribution (double)               (  8 bytes)
+            - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+            - Pairs of:
+                - Support position (float/double)               (4/8 bytes)
+                - Probability mass (uint64_t)                   (  8 bytes)
         """
-        if double_precision:
+
+        if not dist:
+            return None
+
+        buffer: bytes = bytes()
+        offset = 0
+        dist_value = DistributionalValue(double_precision=double_precision)
+
+        if isinstance(dist, str):
             # Parse Hex string
-            if isinstance(dist, str):
-                return DistributionalValue._parse_ux_string_dp(dist)
-            # Parse byte array
-            elif isinstance(dist, (bytes, bytearray)):
-                return DistributionalValue._parse_bytes_dp(dist)
+            fmt = STRUCT_FORMATS["str"]
+
+            # Match an optional floating-point or integer number, followed by 'Ux',
+            # and then hexadecimal characters
+            if sys.implementation.name == 'circuitpython':
+                parts = dist.split("Ux")
+                index = 0
+                if len(parts) == 2:
+                    dist_value.particle_value = float(parts[index])
+                    index += 1
+
+                buffer = bytes.fromhex(parts[index])
             else:
-                print("Error: ", type(dist))
-                return None
+                pattern = r"^([-+]?\d*\.?\d+(?:e[-+]\d+)?|nan|[-+]?inf)?Ux([0-9A-Fa-f]+)$"
+                match = re.match(pattern, dist)
+                if not match:
+                    return None
+
+                dist_value.particle_value = float(match.group(1)) if match.group(1) else None
+
+                buffer = bytes.fromhex(match.group(2))
+        elif isinstance(dist, (bytes, bytearray)):
+            # Parse byte array
+            fmt = STRUCT_FORMATS["bytes"]
+
+            buffer = dist
+            dist_value.particle_value = struct.unpack(fmt["particle"], buffer[offset:offset + 8])[0]
+            offset += 8
         else:
-            # Parse Hex string
-            if isinstance(dist, str):
-                return DistributionalValue._parse_ux_string_sp(dist)
-            # Parse byte array
-            elif isinstance(dist, (bytes, bytearray)):
-                return DistributionalValue._parse_bytes_sp(dist)
-            else:
-                print("Error: ", type(dist))
-                return None
-
-    @staticmethod
-    def _parse_ux_string_dp(text: str) -> Optional["DistributionalValue"]:
-        """
-        Constructs a `DistributionalValue` after parsing an input UxString.
-        This method assumes that the UXString encodes the DD positions as double
-        precision floats.
-
-        Here is the specification of the format:
-            - "Ux"                                              ( 2 characters)
-            - Representation type (uint8_t)                     ( 2 characters)
-            - Number of samples (uint64_t)                      (16 characters) (unused)
-            - Mean value of distribution (double)               (16 characters)
-            - Number of non-zero mass Dirac deltas (uint32_t)   ( 8 characters)
-            Pairs of:
-            - Support position (double)                         (16 characters)
-            - Probability mass (uint64_t)                       (16 characters)
-
-        Args:
-            text: The input UxString.
-        Returns:
-            The constructed `DistributionalValue` or None if parsing fails.
-        Raises:
-            ValueError: If the UxString format is invalid or incomplete.
-        """
-        if not text:
+            print("Error: ", type(dist))
             return None
 
-        # Define the regex pattern to match an optional floating-point or integer number,
-        # followed by 'Ux', and then hexadecimal characters
-        pattern = r"^([-+]?\d*\.?\d+)?Ux([0-9A-Fa-f]+)$"
-
-        # Match the pattern
-        match = re.match(pattern, text)
-
-        if not match:
+        # Check if the buffer has the minimum required length (in bytes)
+        # Minimum length = 1 (repr) + 8 (samples) + 8 (mean) + 4 (count) = 21
+        min_length = offset + 21
+        if len(buffer) < min_length:
             return None
 
-        particleValue = match.group(1)
-        if particleValue is not None:
-            try:
-                particleValue = float(particleValue)
-            except ValueError:
-                return None
+        dist_value.UR_type = struct.unpack(fmt["UR_type"], buffer[offset:offset + 1])[0]
+        offset += 1
 
-        hex_data = match.group(2)
-        UxString = "Ux" + hex_data
+        # Not used, uncomment if needed
+        # number_of_samples = struct.unpack(fmt["sample_count"], buffer[offset:offset + 8])[0]
+        offset += 8
 
-        # Check if the string has the minimum required length
-        # Minimum length = 2 (Ux) + 2 (repr) + 16 (samples) + 16 (mean) + 8 (count) = 44
-        min_length = 44
-        if len(UxString) < min_length:
+        dist_value.mean = struct.unpack(fmt["mean"], buffer[offset:offset + 8])[0]
+        offset += 8
+
+        UR_order = struct.unpack(fmt["UR_order"], buffer[offset:offset + 4])[0]
+        offset += 4
+
+        # Validate UR_order - reasonable upper limit to prevent processing
+        # extremely large inputs that might be malicious
+        if (
+            UR_order is None
+            or UR_order < 0
+            or UR_order > 10000
+        ):
             return None
 
-        try:
-            # Parse metadata
-            representation_type = int(UxString[2:4], 16)
-            mean_value = struct.unpack("!d", bytes.fromhex(UxString[20:36]))[0]
-            dirac_delta_count = int(UxString[36:44], 16)
-
-            # Validate dirac_delta_count - reasonable upper limit to prevent processing
-            # extremely large inputs that might be malicious
-            if dirac_delta_count < 0 or dirac_delta_count > 10000:
-                return None
-
-            # Calculate expected length based on dirac_delta_count
-            expected_length = min_length + (dirac_delta_count * 32)  # 16 for double + 16 for mass
-            if len(UxString) < expected_length:
-                return None
-
-            # Parse data - preallocate arrays for better performance
-            support_position_list = np.zeros(dirac_delta_count, dtype=np.float64)
-            probability_mass_list = np.zeros(dirac_delta_count, dtype=np.float64)
-            raw_probability_mass_list = []
-
-            # Constant for converting fixed-point probabilities
-            FIXED_POINT_ONE = 0x8000000000000000
-
-            # Offset value 44 is the index at which the actual data starts (44 == 2+2+16+16+8)
-            offset = 44
-            for i in range(dirac_delta_count):
-                # Support position is a double (16 characters)
-                try:
-                    support_position = struct.unpack(
-                        "!d", bytes.fromhex(UxString[offset:(offset + 16)])
-                    )[0]
-                    support_position_list[i] = support_position
-
-                    # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0
-                    mass_hex = UxString[(offset + 16):(offset + 32)]
-                    mass = int(mass_hex, 16)
-                    raw_probability_mass_list.append(mass)
-                    probability_mass_list[i] = mass / FIXED_POINT_ONE
-
-                    # Set offset for next data pair
-                    offset += 32
-                except (ValueError, struct.error, IndexError) as e:
-                    print((f"Error parsing UxString: {e}"))
-                    return None
-
-            # Validate that probability masses sum to approximately 1.0 (allowing for floating-point error)
-            probability_sum = np.sum(probability_mass_list)
-            if not (0.99 <= probability_sum <= 1.01):
-                pass  # We don't return None here as some use cases might have valid reasons for sum ≠ 1
-
-            # Initialize an instance of the class to return
-            dist_value = DistributionalValue(double_precision=True)  # Using double precision floats
-            dist_value.mean = mean_value
-            dist_value.UR_type = representation_type
-            dist_value.UR_order = dirac_delta_count
-            dist_value.positions = support_position_list  # Already a numpy array with correct dtype
-            dist_value.masses = probability_mass_list     # Already a numpy array
-            dist_value.raw_masses = raw_probability_mass_list
-            dist_value.particle_value = particleValue
-
-            # Calculate weighted sample variance (only if we have valid positions and masses)
-            if dist_value.mean is not None and dirac_delta_count > 0:
-                # Vectorized computation for better performance
-                squared_diffs = np.power(dist_value.positions - dist_value.mean, 2)
-                dist_value.variance = np.average(squared_diffs, weights=dist_value.masses)
-
-            return dist_value
-
-        except Exception as e:
-            # Catch-all for any unexpected errors during parsing
-            print((f"Error parsing UxString: {e}"))
+        # Calculate expected length based on UR_order
+        # 4 or 8 for position + 8 for mass
+        bytes_per_position = 8 if double_precision else 4
+        bytes_per_dirac_delta = bytes_per_position + 8
+        expected_length = min_length + (UR_order * bytes_per_dirac_delta)
+        if len(buffer) < expected_length:
             return None
 
-    @staticmethod
-    def _parse_ux_string_sp(text: str) -> Optional["DistributionalValue"]:
-        """
-        Constructs a `DistributionalValue` after parsing an input UxString.
-        This method assumes that the UXString encodes the DD positions as single
-        precision floats.
+        position_format = fmt["position_double" if double_precision else "position_single"]
 
-        Here is the specification of the format:
-            - "Ux"                                              ( 2 characters)
-            - Representation type (uint8_t)                     ( 2 characters)
-            - Number of samples (uint64_t)                      (16 characters) (unused)
-            - Mean value of distribution (double)               (16 characters)
-            - Number of non-zero mass Dirac deltas (uint32_t)   ( 8 characters)
-            Pairs of:
-            - Support position (float)                          ( 8 characters)
-            - Probability mass (uint64_t)                       (16 characters)
+        for _ in range(UR_order):
+            support_position_bytes = buffer[offset:offset + bytes_per_position]
+            offset += bytes_per_position
+            position = struct.unpack(position_format, support_position_bytes)[0]
 
-        Args:
-            text: The input UxString.
-        Returns:
-            The constructed `DistributionalValue` or None if parsing fails.
-        Raises:
-            ValueError: If the UxString format is invalid or incomplete.
-        """
-        if not text:
-            return None
+            mass_bytes = buffer[offset:offset + 8]
+            offset += 8
+            raw_mass = struct.unpack(fmt["mass"], mass_bytes)[0]
 
-        # Define the regex pattern to match an optional floating-point or integer number,
-        # followed by 'Ux', and then hexadecimal characters
-        pattern = r"^([-+]?\d*\.?\d+)?Ux([0-9A-Fa-f]+)$"
-
-        # Match the pattern
-        match = re.match(pattern, text)
-
-        if not match:
-            return None
-
-        particleValue = match.group(1)
-        if particleValue is not None:
-            try:
-                particleValue = float(particleValue)
-            except ValueError:
-                return None
-
-        hex_data = match.group(2)
-        UxString = "Ux" + hex_data
-
-        # Check if the string has the minimum required length
-        # Minimum length = 2 (Ux) + 2 (repr) + 16 (samples) + 16 (mean) + 8 (count) = 44
-        min_length = 44
-        if len(UxString) < min_length:
-            return None
-
-        try:
-            # Parse metadata
-            representation_type = int(UxString[2:4], 16)
-            mean_value = struct.unpack("!d", bytes.fromhex(UxString[20:36]))[0]
-            dirac_delta_count = int(UxString[36:44], 16)
-
-            # Validate dirac_delta_count - reasonable upper limit to prevent processing
-            # extremely large inputs that might be malicious
-            if dirac_delta_count < 0 or dirac_delta_count > 10000:
-                return None
-
-            # Calculate expected length based on dirac_delta_count
-            expected_length = min_length + (dirac_delta_count * 24)  # 8 for float + 16 for mass
-            if len(UxString) < expected_length:
-                return None
-
-            # Parse data - preallocate arrays for better performance
-            support_position_list = np.zeros(dirac_delta_count, dtype=np.float32)
-            probability_mass_list = np.zeros(dirac_delta_count, dtype=np.float64)
-            raw_probability_mass_list = []
-
-            # Constant for converting fixed-point probabilities
-            FIXED_POINT_ONE = 0x8000000000000000
-
-            # Offset value 44 is the index at which the actual data starts (44 == 2+2+16+16+8)
-            offset = 44
-            for i in range(dirac_delta_count):
-                # Support position is a float (8 characters)
-                try:
-                    support_position = struct.unpack(
-                        "!f", bytes.fromhex(UxString[offset:(offset + 8)])
-                    )[0]
-                    support_position_list[i] = support_position
-
-                    # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0
-                    mass_hex = UxString[(offset + 8):(offset + 24)]
-                    mass = int(mass_hex, 16)
-                    raw_probability_mass_list.append(mass)
-                    probability_mass_list[i] = mass / FIXED_POINT_ONE
-
-                    # Set offset for next data pair
-                    offset += 24
-                except (ValueError, struct.error, IndexError) as e:
-                    print((f"Error parsing UxString: {e}"))
-                    return None
-
-            # Validate that probability masses sum to approximately 1.0 (allowing for floating-point error)
-            probability_sum = np.sum(probability_mass_list)
-            if not (0.99 <= probability_sum <= 1.01):
-                pass  # We don't return None here as some use cases might have valid reasons for sum ≠ 1
-
-            # Initialize an instance of the class to return
-            dist_value = DistributionalValue(double_precision=False)  # Using single precision floats
-            dist_value.mean = mean_value
-            dist_value.UR_type = representation_type
-            dist_value.UR_order = dirac_delta_count
-            dist_value.positions = support_position_list  # Already a numpy array with correct dtype
-            dist_value.masses = probability_mass_list     # Already a numpy array
-            dist_value.raw_masses = raw_probability_mass_list
-            dist_value.particle_value = particleValue
-
-            # Calculate weighted sample variance (only if we have valid positions and masses)
-            if dist_value.mean is not None and dirac_delta_count > 0:
-                # Vectorized computation for better performance
-                squared_diffs = np.power(dist_value.positions - dist_value.mean, 2)
-                dist_value.variance = np.average(squared_diffs, weights=dist_value.masses)
-
-            return dist_value
-
-        except Exception as e:
-            # Catch-all for any unexpected errors during parsing
-            print((f"Error parsing UxString: {e}"))
-            return None
-
-    @staticmethod
-    def _parse_bytes_dp(buffer: Union[bytes, bytearray]) -> Optional["DistributionalValue"]:
-        """
-        Constructs a `DistributionalValue` after parsing an input byte array.
-        This method assumes that the byte array encodes the DD positions as double
-        precision floats.
-
-        Here is the specification of the format:
-            - Particle value (double)                           (8 bytes)
-            - Representation type (uint8_t)                     (1 byte)
-            - Number of samples (uint64_t)                      (8 bytes) (unused)
-            - Mean value of distribution (double)               (8 bytes)
-            - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
-            Pairs of:
-            - Support position (double)                         (8 bytes)
-            - Probability mass (uint64_t)                       (8 bytes)
-
-        Args:
-            The input byte array.
-        Returns:
-            The constructed `DistributionalValue`.
-        """
-        # Interpret the particle value and remove from buffer
-        particle_value = struct.unpack("1d", buffer[:8])[0]
-        buffer = buffer[8:]
-
-        representation_type = buffer[0]
-
-        mean_value = struct.unpack("1d", buffer[9:17])[0]
-        dirac_delta_count = struct.unpack("I", buffer[17:21])[0]
-
-        # clean buffer
-        buffer = buffer[21:]
-
-        support_position_list = []
-        probability_mass_list = []
-        raw_probability_mass_list = []
-        # Ensure buffer length is divisible by 16
-        if len(buffer) % 16 != 0:
-            raise ValueError("Buffer length must be divisible by 16")
-
-        # Iterate through the buffer in sections of 16 bytes
-        for i in range(0, len(buffer), 16):
-            support_position_hex = buffer[i : i + 8]
-            mass_hex = buffer[i + 8 : i + 16]
-
-            support_position = struct.unpack("1d", support_position_hex)[0]
-            mass = struct.unpack("<Q", mass_hex)[0]
-
-            support_position_list.append(support_position)
-            raw_probability_mass_list.append(mass)
-
-            # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0.
-            # Divide by 0x8000000000000000 to get the float it represents.
-            probability_mass_list.append(mass / 0x8000000000000000)
-
-        # Initialize an instance of the class to return
-        dist_value = DistributionalValue(double_precision=True)
-        dist_value.particle_value = particle_value
-        dist_value.mean = mean_value
-        dist_value.UR_type = representation_type
-        dist_value.UR_order = dirac_delta_count
-        dist_value.positions = np.array(support_position_list, dtype=np.float_)
-        dist_value.masses = np.array(probability_mass_list, dtype=np.float_)
-        dist_value.raw_masses = raw_probability_mass_list
-
-        # Calculate weighted sample variance
-        if dist_value.mean is not None:
-            dist_value.variance = np.average(
-                np.power((np.subtract(dist_value.positions, dist_value.mean)), 2),
-                weights=dist_value.masses,
-            )
+            dist_value.dirac_deltas.append(DiracDelta(position, raw_mass=raw_mass))
 
         return dist_value
 
-    @staticmethod
-    def _parse_bytes_sp(buffer: Union[bytes, bytearray]) -> Optional["DistributionalValue"]:
+    def mean_distance(self, other: "DistributionalValue") -> float:
         """
-        Constructs a `DistributionalValue` after parsing an input byte array.
-        This method assumes that the byte array encodes the DD positions as single
-        precision floats.
-
-        Here is the specification of the format:
-            - Particle value (double)                           (8 bytes)
-            - Representation type (uint8_t)                     (1 byte)
-            - Number of samples (uint64_t)                      (8 bytes) (unused)
-            - Mean value of distribution (double)               (8 bytes)
-            - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
-            Pairs of:
-            - Support position (double)                         (4 bytes)
-            - Probability mass (uint64_t)                       (8 bytes)
+        Calculates the distance between the mean values of this `DistributionalValue`
+        and another `DistributionalValue`.
 
         Args:
-            The input byte array.
+            other: The other `DistributionalValue`.
         Returns:
-            The constructed `DistributionalValue`.
+            The distance between the mean values.
         """
-        # Interpret the particle value and remove from buffer
-        particle_value = struct.unpack("1d", buffer[:8])[0]
-        buffer = buffer[8:]
 
-        representation_type = buffer[0]
+        if self.mean is None or other.mean is None:
+            return math.nan
 
-        mean_value = struct.unpack("1d", buffer[9:17])[0]
-        dirac_delta_count = struct.unpack("I", buffer[17:21])[0]
+        return abs(self.mean - other.mean)
 
-        # clean buffer
-        buffer = buffer[21:]
-
-        support_position_list = []
-        probability_mass_list = []
-        raw_probability_mass_list = []
-        # Ensure buffer length is divisible by 16
-        if len(buffer) % 12 != 0:
-            raise ValueError("Buffer length must be divisible by 12")
-
-        # Iterate through the buffer in sections of 16 bytes
-        for i in range(0, len(buffer), 12):
-            support_position_hex = buffer[i: i + 4]
-            mass_hex = buffer[i + 4: i + 12]
-
-            support_position = struct.unpack("1f", support_position_hex)[0]
-            mass = struct.unpack("<Q", mass_hex)[0]
-
-            support_position_list.append(support_position)
-            raw_probability_mass_list.append(mass)
-
-            # The probability mass is a fixed-point format with 0x8000000000000000 representing 1.0.
-            # Divide by 0x8000000000000000 to get the float it represents.
-            probability_mass_list.append(mass / 0x8000000000000000)
-
-        # Initialize an instance of the class to return
-        dist_value = DistributionalValue(double_precision=False)
-        dist_value.particle_value = particle_value
-        dist_value.mean = mean_value
-        dist_value.UR_type = representation_type
-        dist_value.UR_order = dirac_delta_count
-        dist_value.positions = np.array(support_position_list, dtype=np.float_)
-        dist_value.masses = np.array(probability_mass_list, dtype=np.float_)
-        dist_value.raw_masses = raw_probability_mass_list
-
-        # Calculate weighted sample variance
-        if dist_value.mean is not None:
-            dist_value.variance = np.average(
-                np.power((np.subtract(dist_value.positions, dist_value.mean)), 2),
-                weights=dist_value.masses,
-            )
-
-        return dist_value
-
-    def bytes(self) -> bytes:
-        """
-        Constructs the byte array for the `DistributionalValue`.
-        Uses either single or double precision for support positions based on self.double_precision.
-
-        Returns:
-            The byte array for the `DistributionalValue`.
-        """
-        particle_value = 0.0
-        if self.particle_value is not None:
-            particle_value = self.particle_value
-
-        # Create byte representation
-        byte_representation = bytearray()
-
-        # Format specification:
-        # - Particle value (double)                           (8 bytes)
-        # - Representation type (uint8_t)                     (1 byte)
-        # - Number of samples (uint64_t)                      (8 bytes)
-        # - Mean value of distribution (double)               (8 bytes)
-        # - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
-        # Pairs of:
-        # - Support position (double or float)                (8 or 4 bytes)
-        # - Probability mass (uint64_t)                       (8 bytes)
-
-        # - Particle value (double)                           (8 bytes)
-        # Particle value is always double precision
-        byte_representation += struct.pack("1d", particle_value)
-
-        # - Representation type (uint8_t)                     (1 byte)
-        byte_representation += struct.pack("B", self.UR_type)
-
-        # - Number of samples (uint64_t)                      (8 bytes)
-        byte_representation += struct.pack("<Q", len(self.positions))
-
-        # - Mean value of distribution (double)               (8 bytes)
-        # Mean is always double precision
-        byte_representation += struct.pack("1d", self.mean)
-
-        # - Number of non-zero mass Dirac deltas (uint32_t)   (4 bytes)
-        byte_representation += struct.pack("<I", self.UR_order)
-
-        # Choose the format based on double_precision flag
-        position_format = "1d" if self.double_precision else "1f"
-
-        # Pairs of:
-        # - Support position (double or float)                (8 or 4 bytes)
-        # - Probability mass (uint64_t)                       (8 bytes)
-        for i in range(len(self.positions)):
-            # Pack the position using either double or float precision
-            byte_representation += struct.pack(position_format, self.positions[i])
-
-            # Probability mass is always uint64_t
-            byte_representation += struct.pack("<Q", self.raw_masses[i])
-
-        return bytes(byte_representation)
-
-    def calculate_steps(self) -> Optional[Tuple[List[float], List[float]]]:
-        """
-        Calculates the locations of x-axis and  y-axis step locations. These are
-        the locations that drawstyle='steps-mid' plots the steps on.
-
-        Returns:
-            (stepsX, stepsY): The x-axis and  y-axis step locations.
-        """
-        if self.UR_order is None:
-            return None
-        else:
-            DD_count = self.UR_order
-
-        stepsX = [round(self.positions[0] - self.widths[0] / 2, 2)]
-        stepsY = [0.0]
-
-        for i in range(0, DD_count):
-            newStepX = round(self.positions[i] - self.widths[i] / 2, 2)
-            # print 'newStepX ' + str(newStepX) + ' stepsX[i-1] ' + str(stepsX[i-1])
-            if newStepX - stepsX[-1] > 1.1:
-                stepsX.append(stepsX[-1])
-                stepsY.append(0)
-                stepsX.append(newStepX)
-                stepsY.append(0)
-                stepsX.append(newStepX)
-            else:
-                stepsX.append(newStepX)
-
-            stepsY.append(self.adjusted_masses[i])
-            stepsX.append(round(self.positions[i] + self.widths[i] / 2, 2))
-            stepsY.append(self.adjusted_masses[i])
-
-        stepsX.append(round(self.positions[DD_count - 1] + self.widths[i] / 2, 2))
-        stepsY.append(0)
-
-        # print('Steps X: ' + str(stepsX))
-        # print('Steps Y: ' + str(stepsY))
-        # print('len Steps X: ' + str(len(stepsX)))
-        # print('len Steps Y: ' + str(len(stepsY)))
-
-        return (stepsX, stepsY)
-
-    def mean_relative_diff(self, other=None) -> float:
+    def mean_relative_diff(self, other: "DistributionalValue") -> float:
         """
         Calculates the relative difference between the mean values of
         this `DistributionalValue` and another `DistributionalValue`.
@@ -653,74 +519,10 @@ class DistributionalValue:
             The relative difference between the mean values (normalized by
             the mean value of the other `DistributionalValue`).
         """
-        assert len(self.positions) > 0
-        assert len(other.positions) > 0
-        assert type(self) is type(other)
+        if self.mean is None or other.mean is None:
+            return math.nan
 
-        if self.mean is None:
-            print(type(self.positions[0]))
-            if np.isnan(np.asarray(self.positions)).any():
-                return np.nan
-            dist_value_a_mean = float(np.average(
-                self.positions,
-                weights=self.masses if len(self.masses) > 0 else None
-            ))
-        else:
-            dist_value_a_mean = self.mean
-
-        if other.mean is None:
-            if len(other.masses) == 0:
-                dist_value_2_mean = np.nanmean(
-                    np.array(other.positions).astype("float"))
-            else:
-                dist_value_2_mean = float(np.average(
-                    other.positions,
-                    weights=other.masses if len(other.masses) > 0 else None,
-                ))
-        else:
-            dist_value_2_mean = other.mean
-
-        return np.abs(
-                (dist_value_a_mean - dist_value_2_mean) / dist_value_2_mean
-            )
-
-    def mean_distance(self, other=None) -> float:
-        """
-        Calculates the distance between the mean values of this `DistributionalValue`
-        and another `DistributionalValue`.
-
-        Args:
-            other: The other `DistributionalValue`.
-        Returns:
-            The distance between the mean values.
-        """
-        assert len(self.positions) > 0
-        assert len(other.positions) > 0
-        assert type(self) is type(other)
-
-        if self.mean is None:
-            if np.isnan(np.asarray(self.positions)).any():
-                return np.nan
-            dist_value_a_mean = float(np.average(
-                self.positions,
-                weights=self.masses if len(self.masses) > 0 else None
-            ))
-        else:
-            dist_value_a_mean = self.mean
-
-        if other.mean is None:
-            if len(other.masses) == 0:
-                dist_value_2_mean = np.nanmean(
-                    np.array(other.positions).astype("float"))
-            else:
-                dist_value_2_mean = float(np.average(
-                    other.positions,
-                    weights=other.masses if len(other.masses) > 0 else None,
-                ))
-        else:
-            dist_value_2_mean = other.mean
-
-        return np.abs(dist_value_a_mean - dist_value_2_mean)
+        return abs((self.mean - other.mean) / other.mean)
 
     @property
     def has_no_zero_mass(self) -> Optional[bool]:
@@ -743,29 +545,28 @@ class DistributionalValue:
         Returns:
             `True` if `DistributionalValue` has a zero mass Dirac delta, `False` else.
         """
-        if len(self.positions) == 0:
+        if self.UR_order == 0:
             return None
 
-        return not np.any(self.masses == 0)
+        for dd in self.dirac_deltas:
+            if dd.mass == 0:
+                return False
+
+        return True
 
     def drop_zero_mass_positions(self) -> None:
         """
         Drops (removes) the Dirac deltas of the `DistributionalValue` that has a zero
         mass.
         """
-        if len(self.masses) == 0:
+        if self._has_no_zero_mass:
             return
 
-        # zip -> filter -> unzip
-        filtered_positions, filtered_masses = zip(
-            *[(x, y) for x, y in zip(self.positions, self.masses) if y != 0]
-        )
-        # zip() returns tuple
-        self.positions = np.array(list(filtered_positions), dtype=np.float_)
-        self.masses = np.array(list(filtered_masses), dtype=np.float_)
-        self._has_no_zero_mass = True
+        if self.UR_order == 0:
+            return
 
-        return
+        self._dirac_deltas = [dd for dd in self._dirac_deltas if dd.mass > 0]
+        self._has_no_zero_mass = True
 
     @property
     def is_finite(self) -> Optional[bool]:
@@ -791,10 +592,14 @@ class DistributionalValue:
             `None` if `DistributionalValue` has no Dirac deltas. Else, `True` if
             `DistributionalValue` has a Dirac delta with non-finite position, `False` else.
         """
-        if len(self.positions) == 0:
+        if self.UR_order == 0:
             return None
 
-        return bool(np.all(np.isfinite(self.positions)))
+        for dd in self.dirac_deltas:
+            if not dd.isFinite:
+                return False
+
+        return True
 
     @property
     def is_sorted(self) -> Optional[bool]:
@@ -823,12 +628,20 @@ class DistributionalValue:
             the Dirac deltas of the `DistributionalValue` are sorted according to
             their positions, `False` else.
         """
-        if len(self.positions) == 0:
+        if self.UR_order == 0:
             return None
-        elif len(self.positions) == 1:
+
+        if self.UR_order == 1:
             return True
 
-        return bool(np.all(self.positions[:-1] < self.positions[1:]))
+        for i in range(0, self.UR_order - 1):
+            if not self.dirac_deltas[i].isFinite:
+                return False
+
+            if self.dirac_deltas[i] > self.dirac_deltas[i + 1]:
+                return False
+
+        return True
 
     def sort(self) -> None:
         """
@@ -839,37 +652,29 @@ class DistributionalValue:
         if self._is_sorted:
             return
 
-        positions = np.array(self.positions)
-        masses = np.array(self.masses)
-        n = len(positions)
-        finite_indices = [pos for pos in positions if np.isfinite(pos)]
-        finite_positions = positions[finite_indices]
-        finite_masses = masses[finite_indices]
-        finite_dirac_deltas = list(zip(finite_positions, finite_masses))
-        sorted_finite_dirac_deltas = np.array(sorted(finite_dirac_deltas))
+        self.nan_dirac_delta.mass = 0
+        self.neg_inf_dirac_delta.mass = 0
+        self.pos_inf_dirac_delta.mass = 0
+        finite_dirac_deltas: list[DiracDelta] = []
+        for dd in self.dirac_deltas:
+            if np.isfinite(dd.position):
+                finite_dirac_deltas.append(dd)
+            elif np.isnan(dd.position):
+                self.nan_dirac_delta.mass += dd.mass
+            elif np.isneginf(dd.position):
+                self.neg_inf_dirac_delta.mass += dd.mass
+            elif np.isposinf(dd.position):
+                self.pos_inf_dirac_delta.mass += dd.mass
 
-        nan_indices = np.array(list(range(n)))[np.isnan(positions)]
-        nan_mass = sum(masses[nan_indices])
-        neg_inf_indices = np.where(positions == float("-inf"))[0]
-        neg_inf_mass = sum(masses[neg_inf_indices])
-        inf_indices = np.where(positions == float("inf"))[0]
-        inf_mass = sum(masses[inf_indices])
+        self._dirac_deltas = finite_dirac_deltas
+        self._dirac_deltas.sort()
 
-        self.positions = np.concatenate(
-            (
-                sorted_finite_dirac_deltas[:, 0],
-                np.array([float("nan"), float("-inf"), float("inf")]),
-            )
-        )
-        self.masses = np.concatenate(
-            (
-                sorted_finite_dirac_deltas[:, 1],
-                np.array([nan_mass, neg_inf_mass, inf_mass])
-            )
-        )
+        if self.has_special_values:
+            self.dirac_deltas.append(self.nan_dirac_delta)
+            self.dirac_deltas.append(self.neg_inf_dirac_delta)
+            self.dirac_deltas.append(self.pos_inf_dirac_delta)
+
         self._is_sorted = True
-
-        return
 
     @property
     def is_cured(self) -> Optional[bool]:
@@ -896,12 +701,11 @@ class DistributionalValue:
             no two Dirac deltas of the `DistributionalValue` have the same positional
             value, including NaN, -Inf, and Inf, `False` else.
         """
-        if len(self.positions) == 0:
-            return None
-        if sum(np.isnan(self.positions)) > 1:
-            return False
 
-        return len(self.positions) == len(set(self.positions))
+        if self.UR_order == 0:
+            return None
+
+        return self.UR_order == len(set(self.positions))
 
     def cure(self) -> None:
         """
@@ -911,32 +715,66 @@ class DistributionalValue:
         if self._is_cured:
             return
 
-        positions = np.array(self.positions)
-        masses = np.array(self.masses)
-        n = len(positions)
-        if n == 0:
-            return
-        elif n == 1:
+        self.combine_dirac_deltas(0, 0)
+
+    def combine_dirac_deltas(
+        self,
+        relative_mean_threshold: float = 1e-14,
+        relative_range_threshold: float = 1e-12,
+    ) -> None:
+        """
+        Combine Dirac deltas with same, very-close-relative-to-range,
+        very-close-relative-to-mean-value positions.
+
+        :param relative_mean_threshold: The threshold multiplier for the relative
+        mean.
+        :type relative_mean_threshold: float
+        :param relative_range_threshold: The threshold multiplier for the relative
+        range.
+        :type relative_range_threshold: float
+        """
+        self.sort()
+
+        if len(self.finite_dirac_deltas) <= 1:
             self._is_cured = True
             return
-        else:
-            i = 0
-            while i < n - 1:
-                if np.isnan(positions[i]):
-                    indices = np.array(list(range(n)))[np.isnan(positions)][1:]
-                else:
-                    indices = np.where(positions == positions[i])[0][1:]
-                masses[i] += sum(masses[indices])
-                positions = np.delete(positions, indices)
-                masses = np.delete(masses, indices)
-                i += 1
-                n = len(positions)
 
-        self.positions = positions
-        self.masses = masses
+        threshold: float = 0.0
+        if relative_mean_threshold > 0 and relative_range_threshold > 0:
+            # Calculate the mean value of finite part
+            finite_mass = 0.0
+            finite_mean = 0.0
+
+            # Last three positions are for non-finite values
+            for dd in self.finite_dirac_deltas:
+                finite_mass += dd.mass
+                finite_mean += dd.position * dd.mass
+            finite_mean /= finite_mass
+            mean_threshold = finite_mean * relative_mean_threshold
+
+            range_threshold = (
+                (self.finite_dirac_deltas[-1].position - self.dirac_deltas[0].position)
+                * relative_range_threshold
+            )
+
+            threshold = max(mean_threshold, range_threshold)
+
+        dirac_deltas = [self.dirac_deltas[0]]
+        for dd in self.finite_dirac_deltas[1:]:
+            if dirac_deltas[-1].similar(dd, threshold):
+                dirac_deltas[-1] += dd
+                continue
+
+            dirac_deltas.append(DiracDelta(dd.position, raw_mass=dd.raw_mass))
+
+        self._dirac_deltas = dirac_deltas
+
+        if self.has_special_values:
+            self.dirac_deltas.append(self.nan_dirac_delta)
+            self.dirac_deltas.append(self.neg_inf_dirac_delta)
+            self.dirac_deltas.append(self.pos_inf_dirac_delta)
+
         self._is_cured = True
-
-        return
 
     @property
     def is_full_valid_TTR(self) -> Optional[bool]:
@@ -960,7 +798,7 @@ class DistributionalValue:
         """
         Checks the property that the Dirac deltas of the `DistributionalValue`
         form a full and valid TTR. "Full" means that there are 2^n Dirac deltas
-        (afterdropping zero mass Dirac deltas and curing to combine same position
+        (after dropping zero mass Dirac deltas and curing to combine same position
         Dirac deltas). "Valid" means that there is a distribution whose TTR
         exactly contains the Dirac deltas of the `DistributionalValue`.
 
@@ -969,46 +807,33 @@ class DistributionalValue:
             the Dirac deltas of the `DistributionalValue` form a full and valid TTR,
             `False` else.
         """
-        if self._has_no_zero_mass is not True:
-            self.drop_zero_mass_positions()
 
-        if self._is_cured is not True:
-            self.cure()
+        self.drop_zero_mass_positions()
+        self.cure()
 
-        if self._is_finite is False:
+        if not self.is_finite:
             return False
-        elif self._is_finite is None:
-            if self.check_is_finite() is False:
-                return False
 
-        if self._is_sorted is not True:
-            self.sort()
-
-        number_of_samples = len(self.positions)
-
-        if number_of_samples == 0:
+        if self.UR_order == 0:
             return None
-        elif number_of_samples == 1:
+
+        if self.UR_order == 1:
             return True
-        else:
-            number = number_of_samples
 
-        while number > 1:
-            if number % 2 == 0:
-                number //= 2
-            else:
-                return False
+        # Check UR_order is power of 2
+        if self.UR_order & (self.UR_order - 1) != 0:
+            return False
 
-        ttr_order = int(np.log2(number_of_samples))
-        number_of_boundaries = 2 * number_of_samples + 1
+        ttr_order = int(np.log2(self.UR_order))
+        number_of_boundaries = 2 * self.UR_order - 1
         boundary_positions = np.array([np.nan] * number_of_boundaries)
         boundary_probabilities = np.array([np.nan] * number_of_boundaries)
-        boundary_positions[1::2] = self.positions
-        boundary_probabilities[1::2] = self.masses
+        boundary_positions[::2] = self.positions
+        boundary_probabilities[::2] = self.masses
 
         for n in range(ttr_order):
             step = 2**n
-            for i in range(2 ** (n + 1), number_of_boundaries - 1, 2 ** (n + 2)):
+            for i in range(2 ** (n + 1) - 1, number_of_boundaries, 2 ** (n + 2)):
                 boundary_probabilities[i] = (
                     boundary_probabilities[i - step] + boundary_probabilities[i + step]
                 )
