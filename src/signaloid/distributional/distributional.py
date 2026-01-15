@@ -364,7 +364,7 @@ class DistributionalValue:
     @staticmethod
     def parse(
         dist: Union[str, bytes],
-        double_precision: bool = True
+        double_precision: Optional[bool] = None
     ) -> "Optional[DistributionalValue]":
         """
         Constructs a `DistributionalValue` after parsing an input that can be
@@ -403,8 +403,18 @@ class DistributionalValue:
         if not dist:
             return None
 
+        # If input is a hex string without 'Ux', convert it to bytes and try to
+        # parse it as Ux-bytes
+        if isinstance(dist, str) and "Ux" not in dist:
+            dist = bytes.fromhex(dist)
+
         buffer: bytes = bytes()
         offset = 0
+
+        double_precision_is_known = double_precision is not None
+        if double_precision is None:
+            double_precision = True
+
         dist_value = DistributionalValue(double_precision=double_precision)
 
         if isinstance(dist, str):
@@ -475,7 +485,17 @@ class DistributionalValue:
         bytes_per_dirac_delta = bytes_per_position + 8
         expected_length = min_length + (UR_order * bytes_per_dirac_delta)
         if len(buffer) < expected_length:
-            return None
+            if double_precision_is_known:
+                return None
+
+            # Check if it can be parsed with the other precision
+            double_precision = False
+            dist_value.double_precision = double_precision
+            bytes_per_position = 4
+            bytes_per_dirac_delta = bytes_per_position + 8
+            expected_length = min_length + (UR_order * bytes_per_dirac_delta)
+            if len(buffer) < expected_length:
+                return None
 
         position_format = fmt["position_double" if double_precision else "position_single"]
 
