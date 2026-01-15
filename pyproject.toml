@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "signaloid"
-version = "1.5.0"
+version = "1.6.0"
 description = ""
 authors = [
 	"Signaloid <info@signaloid.com>"
@@ -23,6 +23,9 @@ build-backend = "poetry.core.masonry.api"
 python = ">=3.9,<3.14"
 numpy = "^1.26.4"
 matplotlib = "^3.8.3"
+
+[tool.poetry.scripts]
+signaloid-uxdata-toolkit = "signaloid.uxdata_toolkit:main"
 
 [tool.mypy]
 warn_unused_configs = true
