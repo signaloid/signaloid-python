@@ -1,13 +1,17 @@
 [tool.poetry]
 name = "signaloid"
-version = "1.6.0"
+version = "1.6.1"
 description = ""
 authors = [
 	"Signaloid <info@signaloid.com>"
 ]
 
+packages = [
+    { include = "signaloid", from = "src" }
+]
+
 [tool.poetry.group.dev.dependencies]
-wheel = "^0.42.0"
+wheel = "^0.46.2"
 pex = "^2.1.159"
 types-toml = "^0.10.8.7"
 pytest = "^7.4.4"
