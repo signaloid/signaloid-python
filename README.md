@@ -11,7 +11,7 @@ pip install git+https://github.com/signaloid/signaloid-python
 You can construct `DistributionalValue` objects by parsing `Ux` string or `Ux` bytes. You can find more details about the Signaloid `Ux` format [here](https://docs.signaloid.io/docs/hardware-api/ux-data-format/). Following is an example of parsing `Ux` strings and `Ux` bytes.
 
 ```python
-from signaloid.distributional import DistributionalValue
+from signaloid.distributional.distributional import DistributionalValue
 
 ...
 

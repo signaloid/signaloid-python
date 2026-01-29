@@ -147,7 +147,7 @@ def command_plot(args: argparse.Namespace) -> None:
         print(f"Mean: {dist_value.mean}")
         print(f"Variance: {dist_value.variance}")
         print(f"Number of Dirac deltas: {dist_value.UR_order}")
-        print(f"Double Precision: { dist_value.double_precision }")
+        print(f"Double Precision: {dist_value.double_precision}")
 
         # Create PlotData object from the distributional value
         print("\nPreparing plot data...")
