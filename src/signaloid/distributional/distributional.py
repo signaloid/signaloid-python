@@ -112,23 +112,23 @@ class DistributionalValue:
         return self.dirac_deltas
 
     @property
-    def positions(self) -> NDArray[np.float_]:
+    def positions(self) -> NDArray[np.float64]:
         """The list af all the Dirac Delta positions.
 
         :return: The list of all the Dirac Delta positions.
-        :rtype: NDArray[np.float_]
+        :rtype: NDArray[np.float64]
         """
-        arr: NDArray[np.float_] = np.array([dd.position for dd in self.dirac_deltas], dtype=np.float_)
+        arr: NDArray[np.float64] = np.array([dd.position for dd in self.dirac_deltas], dtype=np.float64)
         return arr
 
     @property
-    def masses(self) -> NDArray[np.float_]:
+    def masses(self) -> NDArray[np.float64]:
         """The list af all the Dirac Delta floating-point masses.
 
         :return: The list of all the Dirac Delta floating-point masses.
-        :rtype: NDArray[np.float_]
+        :rtype: NDArray[np.float64]
         """
-        arr: NDArray[np.float_] = np.array([dd.mass for dd in self.dirac_deltas], dtype=np.float_)
+        arr: NDArray[np.float64] = np.array([dd.mass for dd in self.dirac_deltas], dtype=np.float64)
         return arr
 
     @property

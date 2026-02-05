@@ -51,48 +51,48 @@ class PlotData:
         self.plotting_resolution: Optional[int] = plotting_resolution
         self.plotting_ttr_order: Optional[int] = None
 
-        self._positions: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self._masses: NDArray[np.float_] = np.array([], dtype=np.float_)
-        self._widths: NDArray[np.float_] = np.array([], dtype=np.float_)
+        self._positions: NDArray[np.float64] = np.array([], dtype=np.float64)
+        self._masses: NDArray[np.float64] = np.array([], dtype=np.float64)
+        self._widths: NDArray[np.float64] = np.array([], dtype=np.float64)
         self._max_value: Optional[float] = None
 
         self._construct_plot_data()
 
     @property
-    def positions(self) -> NDArray[np.float_]:
+    def positions(self) -> NDArray[np.float64]:
         """The boundary positions list.
 
         :return: The boundary positions list.
-        :rtype: NDArray[np.float_]
+        :rtype: NDArray[np.float64]
         """
         return self._positions
 
     @positions.setter
-    def positions(self, positions: NDArray[np.float_]) -> None:
+    def positions(self, positions: NDArray[np.float64]) -> None:
         """Sets the boundary positions list, resetting the widths to avoid faulty
         values.
 
         :param positions: The boundary positions list to use
-        :type positions: NDArray[np.float_]
+        :type positions: NDArray[np.float64]
         """
         self._positions = positions
-        self._widths = np.array([], dtype=np.float_)
+        self._widths = np.array([], dtype=np.float64)
 
     @property
-    def masses(self) -> NDArray[np.float_]:
+    def masses(self) -> NDArray[np.float64]:
         """The bin heights list.
 
         :return: The bin heights list.
-        :rtype: NDArray[np.float_]
+        :rtype: NDArray[np.float64]
         """
         return self._masses
 
     @masses.setter
-    def masses(self, masses: NDArray[np.float_]) -> None:
+    def masses(self, masses: NDArray[np.float64]) -> None:
         """Sets the bin heights list, resetting the max value to avoid faulty value.
 
         :param masses: The bin heights list to use.
-        :type masses: NDArray[np.float_]
+        :type masses: NDArray[np.float64]
         """
         self._masses = masses
         self._max_value = None
@@ -144,11 +144,11 @@ class PlotData:
         return self._max_value
 
     @property
-    def widths(self) -> NDArray[np.float_]:
+    def widths(self) -> NDArray[np.float64]:
         """The widths list between each pair of positions.
 
         :return: The widths list.
-        :rtype: NDArray[np.float_]
+        :rtype: NDArray[np.float64]
         """
         if not self._widths.size > 0:
             self._widths = self.positions[1:] - self.positions[:-1]
@@ -160,7 +160,7 @@ class PlotData:
         finite_sorted_dirac_deltas: list[DiracDelta],
         exponent: int,
         use_ttr_binning: bool
-    ) -> tuple[NDArray[np.float_], NDArray[np.float_]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
         If `use_ttr_binning` is true:
         Determines the internal boundary positions (and probabilities) using the
@@ -232,12 +232,12 @@ class PlotData:
     @staticmethod
     def _handle_extremal_bins(
         finite_sorted_dirac_deltas: list[DiracDelta],
-        boundary_positions: NDArray[np.float_],
-        boundary_probabilities: NDArray[np.float_],
-        bin_widths: NDArray[np.float_],
-        bin_heights: NDArray[np.float_],
+        boundary_positions: NDArray[np.float64],
+        boundary_probabilities: NDArray[np.float64],
+        bin_widths: NDArray[np.float64],
+        bin_heights: NDArray[np.float64],
         left: bool = True,
-    ) -> tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """
         Checking if (d/dx)^2 = 0 boundary condition has a solution.
         If not, falling back to the boundary condition d/dx = 0.
@@ -324,9 +324,9 @@ class PlotData:
     @staticmethod
     def _get_binning(
         finite_sorted_dirac_deltas: list[DiracDelta],
-        boundary_positions: NDArray[np.float_],
-        boundary_probabilities: NDArray[np.float_]
-    ) -> tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]]:
+        boundary_positions: NDArray[np.float64],
+        boundary_probabilities: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """
         Finds the binning for the given finite and sorted Dirac deltas and the
         calculated internal boundary positions and probabilities.
@@ -386,7 +386,7 @@ class PlotData:
             finite_sorted_dirac_deltas: list[DiracDelta],
             exponent: int,
             use_ttr_binning: bool
-    ) -> tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """
         - If `use_ttr_binning` is true:
             Creates a binning using the TTR binning method. The TTR binning method
@@ -423,9 +423,9 @@ class PlotData:
 
     @staticmethod
     def _bin_pdf_expected_dirac_delta(
-            boundary_positions: NDArray[np.float_],
-            bin_widths: NDArray[np.float_],
-            bin_heights: NDArray[np.float_]
+            boundary_positions: NDArray[np.float64],
+            bin_widths: NDArray[np.float64],
+            bin_heights: NDArray[np.float64]
     ) -> DiracDelta:
         """
         Computes the expected Dirac delta of an input bin PDF.
@@ -454,9 +454,9 @@ class PlotData:
 
     @staticmethod
     def _bin_pdf_to_ttr(
-            boundary_positions: NDArray[np.float_],
-            bin_widths: NDArray[np.float_],
-            bin_heights: NDArray[np.float_],
+            boundary_positions: NDArray[np.float64],
+            bin_widths: NDArray[np.float64],
+            bin_heights: NDArray[np.float64],
             order: int
     ) -> list[DiracDelta]:
         """
@@ -480,12 +480,12 @@ class PlotData:
         if order == 0:
             return [expected_dirac_delta]
 
-        low_boundary_positions: NDArray[np.float_] = np.array([], dtype=np.float_)
-        low_bin_widths: NDArray[np.float_] = np.array([], dtype=np.float_)
-        low_bin_heights: NDArray[np.float_] = np.array([], dtype=np.float_)
-        high_boundary_positions: NDArray[np.float_] = np.array([], dtype=np.float_)
-        high_bin_widths: NDArray[np.float_] = np.array([], dtype=np.float_)
-        high_bin_heights: NDArray[np.float_] = np.array([], dtype=np.float_)
+        low_boundary_positions: NDArray[np.float64] = np.array([], dtype=np.float64)
+        low_bin_widths: NDArray[np.float64] = np.array([], dtype=np.float64)
+        low_bin_heights: NDArray[np.float64] = np.array([], dtype=np.float64)
+        high_boundary_positions: NDArray[np.float64] = np.array([], dtype=np.float64)
+        high_bin_widths: NDArray[np.float64] = np.array([], dtype=np.float64)
+        high_bin_heights: NDArray[np.float64] = np.array([], dtype=np.float64)
 
         for i, boundary_position in enumerate(boundary_positions):
             if boundary_position == expected_dirac_delta.position:
@@ -544,8 +544,8 @@ class PlotData:
             return
 
         if len(finite_dirac_deltas) == 1:
-            self.positions = np.array([finite_dirac_deltas[0].position], dtype=np.float_)
-            self.masses = np.array([finite_dirac_deltas[0].mass], dtype=np.float_)
+            self.positions = np.array([finite_dirac_deltas[0].position], dtype=np.float64)
+            self.masses = np.array([finite_dirac_deltas[0].mass], dtype=np.float64)
             return
 
         # Set plot resolution to (N*2) where N is machine representation
