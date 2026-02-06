@@ -47,7 +47,7 @@ import ulab.numpy as ulab_np  # type: ignore[import-not-found]
 
 class NumpyWrapper:
     def __init__(self):
-        self.float_ = ulab_np.float
+        self.float64 = ulab_np.float
 
     def __getattr__(self, name):
         """
