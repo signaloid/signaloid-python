@@ -18,9 +18,9 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+from __future__ import annotations
 import math
-from typing import Any, Optional, Union
-
+from typing import Any
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -49,12 +49,12 @@ def plot(
     no_special_y: bool = False,
     save: bool = False,
     verbose: bool = False,
-    x_lim: Optional[tuple[float, float]] = None,
-    y_lim: Optional[tuple[float, float]] = None,
-    x_label: Optional[str] = None,
-    x_tick_label_rotation: Optional[float] = None,
+    x_lim: tuple[float, float] | None = None,
+    y_lim: tuple[float, float] | None = None,
+    x_label: str | None = None,
+    x_tick_label_rotation: float | None = None,
     font_size: int = 20,
-    matplotlib_rc_params_override: Optional[dict[str, str]] = None,
+    matplotlib_rc_params_override: dict[str, str] | None = None,
 ) -> bool:
     """
     Args:
@@ -75,7 +75,7 @@ def plot(
         `True` if successful, `False` else.
     """
 
-    matplotlib_rcParams_update_defaults: dict[str, Union[int, str, bool]] = {
+    matplotlib_rcParams_update_defaults: dict[str, int | str | bool] = {
         "font.size": font_size,
         "figure.facecolor": "FFFFFF30",
         "axes.facecolor": "FFFFFF30",
