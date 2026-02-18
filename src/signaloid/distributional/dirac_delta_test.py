@@ -67,10 +67,7 @@ class TestDiracDelta(unittest.TestCase):
         d3 = d1 + d2
 
         combined_mass: float = 2.3 + 5.6
-        combined_position: float = (
-            1.2 * 2.3
-            + 4.5 * 5.6
-        ) / combined_mass
+        combined_position: float = (1.2 * 2.3 + 4.5 * 5.6) / combined_mass
         self.assertTrue(d3.position == combined_position)
         self.assertTrue(d3.mass == combined_mass)
 

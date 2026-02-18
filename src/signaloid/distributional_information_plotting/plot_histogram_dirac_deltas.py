@@ -18,15 +18,13 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+from __future__ import annotations
 import sys
 import math
 
-if sys.implementation.name != 'circuitpython':
-    from typing import Optional
-
+if sys.implementation.name != "circuitpython":
     # Use numpy for accelerated computing
     import numpy as np
-    from numpy.typing import NDArray
 else:
     # Use the extended version of ulab's numpy when running on CircuitPython
     from signaloid.circuitpython.extended_ulab_numpy import np  # type: ignore[no-redef]
@@ -37,62 +35,57 @@ from signaloid.distributional.distributional import DistributionalValue
 
 class PlotData:
     def __init__(
-        self,
-        dist: DistributionalValue,
-        plotting_resolution: Optional[int] = None
+        self, dist: DistributionalValue, plotting_resolution: int | None = None
     ) -> None:
-        if (
-            dist.mean is None
-            or dist.UR_order == 0
-        ):
+        if dist.mean is None or dist.UR_order == 0:
             raise ValueError("Failed to load data")
 
         self.dist = dist
-        self.plotting_resolution: Optional[int] = plotting_resolution
-        self.plotting_ttr_order: Optional[int] = None
+        self.plotting_resolution: int | None = plotting_resolution
+        self.plotting_ttr_order: int | None = None
 
-        self._positions: NDArray[np.float64] = np.array([], dtype=np.float64)
-        self._masses: NDArray[np.float64] = np.array([], dtype=np.float64)
-        self._widths: NDArray[np.float64] = np.array([], dtype=np.float64)
-        self._max_value: Optional[float] = None
+        self._positions: np.ndarray = np.array([], dtype=np.float64)
+        self._masses: np.ndarray = np.array([], dtype=np.float64)
+        self._widths: np.ndarray = np.array([], dtype=np.float64)
+        self._max_value: float | None = None
 
         self._construct_plot_data()
 
     @property
-    def positions(self) -> NDArray[np.float64]:
+    def positions(self) -> np.ndarray:
         """The boundary positions list.
 
         :return: The boundary positions list.
-        :rtype: NDArray[np.float64]
+        :rtype: np.ndarray
         """
         return self._positions
 
     @positions.setter
-    def positions(self, positions: NDArray[np.float64]) -> None:
+    def positions(self, positions: np.ndarray) -> None:
         """Sets the boundary positions list, resetting the widths to avoid faulty
         values.
 
         :param positions: The boundary positions list to use
-        :type positions: NDArray[np.float64]
+        :type positions: np.ndarray
         """
         self._positions = positions
         self._widths = np.array([], dtype=np.float64)
 
     @property
-    def masses(self) -> NDArray[np.float64]:
+    def masses(self) -> np.ndarray:
         """The bin heights list.
 
         :return: The bin heights list.
-        :rtype: NDArray[np.float64]
+        :rtype: np.ndarray
         """
         return self._masses
 
     @masses.setter
-    def masses(self, masses: NDArray[np.float64]) -> None:
+    def masses(self, masses: np.ndarray) -> None:
         """Sets the bin heights list, resetting the max value to avoid faulty value.
 
         :param masses: The bin heights list to use.
-        :type masses: NDArray[np.float64]
+        :type masses: np.ndarray
         """
         self._masses = masses
         self._max_value = None
@@ -144,11 +137,11 @@ class PlotData:
         return self._max_value
 
     @property
-    def widths(self) -> NDArray[np.float64]:
+    def widths(self) -> np.ndarray:
         """The widths list between each pair of positions.
 
         :return: The widths list.
-        :rtype: NDArray[np.float64]
+        :rtype: np.ndarray
         """
         if not self._widths.size > 0:
             self._widths = self.positions[1:] - self.positions[:-1]
@@ -159,8 +152,8 @@ class PlotData:
     def _determine_boundary_positions(
         finite_sorted_dirac_deltas: list[DiracDelta],
         exponent: int,
-        use_ttr_binning: bool
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        use_ttr_binning: bool,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         If `use_ttr_binning` is true:
         Determines the internal boundary positions (and probabilities) using the
@@ -204,8 +197,7 @@ class PlotData:
             step = 2**n
             for i in range(2 ** (n + 1), number_of_boundaries - 1, 2 ** (n + 2)):
                 boundary_probabilities[i] = (
-                    boundary_probabilities[i - step]
-                    + boundary_probabilities[i + step]
+                    boundary_probabilities[i - step] + boundary_probabilities[i + step]
                 )
                 boundary_positions[i] = (
                     boundary_probabilities[i - step] * boundary_positions[i - step]
@@ -232,12 +224,12 @@ class PlotData:
     @staticmethod
     def _handle_extremal_bins(
         finite_sorted_dirac_deltas: list[DiracDelta],
-        boundary_positions: NDArray[np.float64],
-        boundary_probabilities: NDArray[np.float64],
-        bin_widths: NDArray[np.float64],
-        bin_heights: NDArray[np.float64],
+        boundary_positions: np.ndarray,
+        boundary_probabilities: np.ndarray,
+        bin_widths: np.ndarray,
+        bin_heights: np.ndarray,
         left: bool = True,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Checking if (d/dx)^2 = 0 boundary condition has a solution.
         If not, falling back to the boundary condition d/dx = 0.
@@ -282,40 +274,35 @@ class PlotData:
                 elif any(roots_positive):
                     w0 = max(root1, root2)
 
-        if (
-            w0 is None
-            or math.isinf(det)
-            or math.isnan(det)
-        ):
+        if w0 is None or math.isinf(det) or math.isnan(det):
             # The boundary condition d/dx = 0.
-            boundary_positions[0 if left else -1] = (
-                boundary_positions[1 if left else -2]
-                + (-1 if left else 1) * (
-                    boundary_positions[2 if left else -2]
-                    - boundary_positions[1 if left else -3]
-                )
+            boundary_positions[0 if left else -1] = boundary_positions[
+                1 if left else -2
+            ] + (-1 if left else 1) * (
+                boundary_positions[2 if left else -2]
+                - boundary_positions[1 if left else -3]
             )
         else:
             # The boundary condition (d/dx)^2 = 0.
             boundary_positions[0 if left else -1] = (
-                boundary_positions[1 if left else -2]
-                + (-1 if left else 1) * w0
+                boundary_positions[1 if left else -2] + (-1 if left else 1) * w0
             )
 
         bin_widths[0 if left else -1] = (
             boundary_positions[1 if left else -1]
             - boundary_positions[0 if left else -2]
         )
-        averageHeight = (
-            finite_sorted_dirac_deltas[0 if left else -1].mass
-            / (bin_widths[0 if left else -1] + bin_widths[1 if left else -2])
+        averageHeight = finite_sorted_dirac_deltas[0 if left else -1].mass / (
+            bin_widths[0 if left else -1] + bin_widths[1 if left else -2]
         )
         bin_heights[0 if left else -1] = (
-            averageHeight * bin_widths[1 if left else -2]
+            averageHeight
+            * bin_widths[1 if left else -2]
             / bin_widths[0 if left else -1]
         )
         bin_heights[1 if left else -2] = (
-            averageHeight * bin_widths[0 if left else -1]
+            averageHeight
+            * bin_widths[0 if left else -1]
             / bin_widths[1 if left else -2]
         )
 
@@ -324,9 +311,9 @@ class PlotData:
     @staticmethod
     def _get_binning(
         finite_sorted_dirac_deltas: list[DiracDelta],
-        boundary_positions: NDArray[np.float64],
-        boundary_probabilities: NDArray[np.float64]
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+        boundary_positions: np.ndarray,
+        boundary_probabilities: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Finds the binning for the given finite and sorted Dirac deltas and the
         calculated internal boundary positions and probabilities.
@@ -383,10 +370,10 @@ class PlotData:
 
     @staticmethod
     def _create_binning(
-            finite_sorted_dirac_deltas: list[DiracDelta],
-            exponent: int,
-            use_ttr_binning: bool
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+        finite_sorted_dirac_deltas: list[DiracDelta],
+        exponent: int,
+        use_ttr_binning: bool,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         - If `use_ttr_binning` is true:
             Creates a binning using the TTR binning method. The TTR binning method
@@ -411,7 +398,10 @@ class PlotData:
                 bin widths, and bin heights that describe the output binning.
         """
 
-        boundary_positions, boundary_probabilities = PlotData._determine_boundary_positions(
+        (
+            boundary_positions,
+            boundary_probabilities,
+        ) = PlotData._determine_boundary_positions(
             finite_sorted_dirac_deltas, exponent, use_ttr_binning
         )
 
@@ -423,9 +413,7 @@ class PlotData:
 
     @staticmethod
     def _bin_pdf_expected_dirac_delta(
-            boundary_positions: NDArray[np.float64],
-            bin_widths: NDArray[np.float64],
-            bin_heights: NDArray[np.float64]
+        boundary_positions: np.ndarray, bin_widths: np.ndarray, bin_heights: np.ndarray
     ) -> DiracDelta:
         """
         Computes the expected Dirac delta of an input bin PDF.
@@ -448,16 +436,18 @@ class PlotData:
                 probability * (boundary_positions[i + 1] + boundary_positions[i]) / 2
             )
 
-        expected_dirac_delta = DiracDelta(moment_sum / probability_sum, mass=probability_sum)
+        expected_dirac_delta = DiracDelta(
+            moment_sum / probability_sum, mass=probability_sum
+        )
 
         return expected_dirac_delta
 
     @staticmethod
     def _bin_pdf_to_ttr(
-            boundary_positions: NDArray[np.float64],
-            bin_widths: NDArray[np.float64],
-            bin_heights: NDArray[np.float64],
-            order: int
+        boundary_positions: np.ndarray,
+        bin_widths: np.ndarray,
+        bin_heights: np.ndarray,
+        order: int,
     ) -> list[DiracDelta]:
         """
         Computes TTR for an input bin PDF.
@@ -480,12 +470,12 @@ class PlotData:
         if order == 0:
             return [expected_dirac_delta]
 
-        low_boundary_positions: NDArray[np.float64] = np.array([], dtype=np.float64)
-        low_bin_widths: NDArray[np.float64] = np.array([], dtype=np.float64)
-        low_bin_heights: NDArray[np.float64] = np.array([], dtype=np.float64)
-        high_boundary_positions: NDArray[np.float64] = np.array([], dtype=np.float64)
-        high_bin_widths: NDArray[np.float64] = np.array([], dtype=np.float64)
-        high_bin_heights: NDArray[np.float64] = np.array([], dtype=np.float64)
+        low_boundary_positions: np.ndarray = np.array([], dtype=np.float64)
+        low_bin_widths: np.ndarray = np.array([], dtype=np.float64)
+        low_bin_heights: np.ndarray = np.array([], dtype=np.float64)
+        high_boundary_positions: np.ndarray = np.array([], dtype=np.float64)
+        high_bin_widths: np.ndarray = np.array([], dtype=np.float64)
+        high_bin_heights: np.ndarray = np.array([], dtype=np.float64)
 
         for i, boundary_position in enumerate(boundary_positions):
             if boundary_position == expected_dirac_delta.position:
@@ -544,7 +534,9 @@ class PlotData:
             return
 
         if len(finite_dirac_deltas) == 1:
-            self.positions = np.array([finite_dirac_deltas[0].position], dtype=np.float64)
+            self.positions = np.array(
+                [finite_dirac_deltas[0].position], dtype=np.float64
+            )
             self.masses = np.array([finite_dirac_deltas[0].mass], dtype=np.float64)
             return
 
@@ -558,9 +550,8 @@ class PlotData:
         log2_of_plotting_resolution = self.plotting_resolution.bit_length() - 1
         self.plotting_ttr_order = log2_of_plotting_resolution - 1
 
-        if (
-            self.plotting_resolution > 2
-            and self.plotting_resolution > 2 ** (self.plotting_ttr_order + 1)
+        if self.plotting_resolution > 2 and self.plotting_resolution > 2 ** (
+            self.plotting_ttr_order + 1
         ):
             raise ValueError(
                 "plot_histogram_dirac_deltas: plotting_resolution must be a power of 2!"

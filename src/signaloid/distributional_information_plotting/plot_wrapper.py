@@ -24,13 +24,12 @@ from typing import Any, Optional, Union
 import matplotlib
 import matplotlib.pyplot as plt
 
-from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import PlotData
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
+    PlotData,
+)
 
 
-def printv(
-        verbose: bool,
-        formatString: str,
-        *args) -> None:
+def printv(verbose: bool, formatString: str, *args) -> None:
     """
     A wrapper for `print()` that allows for controlled verbosity.
 
@@ -94,7 +93,9 @@ def plot(
         ncols=2 if plot_data.dist.has_special_values else 1,
         sharey=False,
         figsize=(10 + (3 if plot_data.dist.has_special_values else 0), 6),
-        gridspec_kw={"width_ratios": [4.2, 1]} if plot_data.dist.has_special_values else None,
+        gridspec_kw=(
+            {"width_ratios": [4.2, 1]} if plot_data.dist.has_special_values else None
+        ),
     )
 
     if not plot_data.dist.has_special_values:
@@ -111,11 +112,7 @@ def plot(
             text="",
             xy=(plot_data.positions[0], plot_data.masses[0]),
             xytext=(plot_data.positions[0], 0),
-            arrowprops={
-                "arrowstyle": "->",
-                "facecolor": "black",
-                "lw": 3
-            },
+            arrowprops={"arrowstyle": "->", "facecolor": "black", "lw": 3},
         )
     else:
         # Plot the binning.
@@ -126,7 +123,7 @@ def plot(
             align="edge",
             edgecolor="#33A333",
             facecolor="#33A333" + "40",
-            hatch="\\"
+            hatch="\\",
         )
 
     # Default kwargs for plt.annotate
@@ -157,11 +154,7 @@ def plot(
     if plot_data.dist.has_special_values:
         fig.sca(axes[1])
         plt.bar(
-            x=[
-                "NaN",
-                "-Inf",
-                "Inf"
-            ],
+            x=["NaN", "-Inf", "Inf"],
             height=[
                 plot_data.dist.nan_dirac_delta.mass,
                 plot_data.dist.neg_inf_dirac_delta.mass,

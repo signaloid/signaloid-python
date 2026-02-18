@@ -18,22 +18,21 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+from __future__ import annotations
 import csv
 import os
 import shutil
 import tempfile
-from typing import Optional
 import unittest
-
 from signaloid.distributional.distributional import DistributionalValue
-from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import PlotData
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
+    PlotData,
+)
 
 from .plot_wrapper import plot
 
 
-def read_ux_strings_from_csv(
-    csv_filename: str
-) -> Optional[list[str]]:
+def read_ux_strings_from_csv(csv_filename: str) -> list[str] | None:
     """
     Reads Ux strings from a csv file
 
@@ -43,7 +42,7 @@ def read_ux_strings_from_csv(
         ux_strings: list of Ux strings
     """
     ux_strings: list[str] = []
-    with open(csv_filename, 'r') as csvfile:
+    with open(csv_filename, "r") as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             ux_strings.append(row[0])
@@ -62,7 +61,7 @@ class TestPlotting(unittest.TestCase):
 
     def test_plot_wrapper(
         self,
-        input_filename: str = "src/signaloid/distributional/test_ux_value_pairs.csv"
+        input_filename: str = "src/signaloid/distributional/test_ux_value_pairs.csv",
     ) -> None:
         """
         Test parsing and plotting Ux Strings
@@ -85,9 +84,11 @@ class TestPlotting(unittest.TestCase):
             plot_data = PlotData(distValue)
             self.assertIsNotNone(plot_data, "Failed to parse data")
 
-            filepath = os.path.join(self.test_dir, f'file{i}.png')
+            filepath = os.path.join(self.test_dir, f"file{i}.png")
             plot(plot_data, path=filepath, save=True)
-            self.assertTrue(os.path.exists(filepath), f"File was not created: {filepath}")
+            self.assertTrue(
+                os.path.exists(filepath), f"File was not created: {filepath}"
+            )
 
 
 if __name__ == "__main__":
