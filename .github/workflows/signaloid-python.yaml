@@ -65,6 +65,9 @@ jobs:
     - name: Lint
       run: poetry run flake8 src/
 
+    - name: Check format
+      run: poetry run black --check src/
+
     - name: Typecheck
       run: poetry run mypy -p signaloid
 

@@ -38,15 +38,16 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from signaloid.distributional.distributional import DistributionalValue
-from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import \
-    PlotData
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
+    PlotData,
+)
 from signaloid.distributional_information_plotting.plot_wrapper import plot
 
 
 def parse_arguments() -> argparse.Namespace:
     # Create the parser
     parser = argparse.ArgumentParser(
-        description='Set of tools for working with Signaloid Ux data.'
+        description="Set of tools for working with Signaloid Ux data."
     )
 
     command_subparsers = parser.add_subparsers(
@@ -73,18 +74,19 @@ Example:
   %(prog)s 0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
   %(prog)s 09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080
   %(prog)s -o output.png 0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
-        """
+        """,
     )
 
     plot_parser.add_argument(
-        '-o', '--output',
+        "-o",
+        "--output",
         type=str,
-        default='plot.png',
-        help='Output PNG filename (default: plot.png)'
+        default="plot.png",
+        help="Output PNG filename (default: plot.png)",
     )
 
     plot_parser.add_argument(
-        'ux_data',
+        "ux_data",
         type=str,
         help='Ux-string or Ux-bytes to plot (e.g., "90.6Ux04000000...")',
     )
@@ -154,14 +156,14 @@ def command_plot(args: argparse.Namespace) -> None:
         plot_data = PlotData(dist_value)
 
         # Set matplotlib to non-interactive backend for saving
-        matplotlib.use('Agg')
+        matplotlib.use("Agg")
 
         # Plot the distribution using the plot wrapper function
         print("Generating plot...")
         plot(plot_data)
 
         # Save the figure to file
-        plt.savefig(args.output, dpi=300, bbox_inches='tight')
+        plt.savefig(args.output, dpi=300, bbox_inches="tight")
         print(f"✓ Plot saved to: {args.output}")
     except Exception as e:
         print(f"\nError parsing or plotting Ux-data: {e}")

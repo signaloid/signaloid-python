@@ -18,12 +18,11 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+from __future__ import annotations
 import sys
 import math
 
-if sys.implementation.name != 'circuitpython':
-    from typing import Optional
-
+if sys.implementation.name != "circuitpython":
     # Use numpy for accelerated computing
     import numpy as np
 else:
@@ -36,10 +35,7 @@ FIXED_POINT_ONE = 0x8000000000000000
 
 class DiracDelta:
     def __init__(
-        self,
-        position: float,
-        raw_mass: Optional[int] = None,
-        mass: Optional[float] = None
+        self, position: float, raw_mass: int | None = None, mass: float | None = None
     ) -> None:
         """Initializes the Dirac Delta, given a position, and a mass in either
         a fixed-point or a floating point representation. If both representations
@@ -50,10 +46,10 @@ class DiracDelta:
         :type position: float
         :param raw_mass: The Dirac Delta mass in 64bit fixed-point representation,
         defaults to None.
-        :type raw_mass: Optional[int]
+        :type raw_mass: int | None
         :param mass: The Dirac Delta mass in floating-point representation,
         defaults to None.
-        :type mass: Optional[float]
+        :type mass: float | None
         """
         self.position: float = position
         self._raw_mass: int = 0
@@ -124,8 +120,7 @@ class DiracDelta:
         """
         combined_mass: float = self.mass + other.mass
         combined_position: float = (
-            self.position * self.mass
-            + other.position * other.mass
+            self.position * self.mass + other.position * other.mass
         ) / combined_mass
 
         return DiracDelta(position=combined_position, mass=combined_mass)

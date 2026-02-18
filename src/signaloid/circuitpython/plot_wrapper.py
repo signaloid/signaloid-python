@@ -34,9 +34,9 @@ from circuitpython_uplot.plot import Plot
 from circuitpython_uplot.scatter import Pointer, Scatter
 
 from signaloid.circuitpython.extended_ulab_numpy import np
-from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import \
-    PlotData
-
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
+    PlotData,
+)
 
 # The background color of the plot
 BG_COLOR = 0xFFFFFF
@@ -73,7 +73,7 @@ Y_SHIFT = 0
 
 
 def apply_array_multiplier(arr, multiplier):
-    arr = np.divide(arr, 10 ** multiplier)
+    arr = np.divide(arr, 10**multiplier)
 
     return arr
 
@@ -81,7 +81,7 @@ def apply_array_multiplier(arr, multiplier):
 def transform_array_with_multiplier(arr):
     max_value = max(np.abs(arr))
     multiplier = int(math.log(max_value, 10)) + (-1 if max_value < 1 else 0)
-    arr = np.divide(arr, 10 ** multiplier)
+    arr = np.divide(arr, 10**multiplier)
 
     return arr, multiplier
 
@@ -193,8 +193,8 @@ def render_histogram(plot, boundary_positions, bin_heights, width, align, edgeco
 
 
 def render_x_multiplier(g, c, multiplier):
-    anchored_x = c.points[1][0] + X_SHIFT - .5 * TICK_SIZE
-    anchored_y = c.points[1][1] - Y_SHIFT + .5 * TICK_SIZE
+    anchored_x = c.points[1][0] + X_SHIFT - 0.5 * TICK_SIZE
+    anchored_y = c.points[1][1] - Y_SHIFT + 0.5 * TICK_SIZE
     text_area = label.Label(
         font=terminalio.FONT,
         text=f"e{multiplier:+d}",
@@ -209,7 +209,7 @@ def render_x_multiplier(g, c, multiplier):
 
 def render_y_multiplier(g, c, multiplier):
     minh = min(c.points[:][1])
-    anchored_x = c.points[1][0] + X_SHIFT - .5 * TICK_SIZE
+    anchored_x = c.points[1][0] + X_SHIFT - 0.5 * TICK_SIZE
     anchored_y = minh - 2 * TICK_SIZE
     text_area = label.Label(
         font=terminalio.FONT,
@@ -230,7 +230,10 @@ def render_non_finite_values(g, nan, neg_inf, pos_inf):
         color=TEXT_COLOR,
         line_spacing=0.8,
         anchor_point=(0.5, 1.0),
-        anchored_position=(board.DISPLAY.width // 2, board.DISPLAY.height - 1.5 * TICK_SIZE),
+        anchored_position=(
+            board.DISPLAY.width // 2,
+            board.DISPLAY.height - 1.5 * TICK_SIZE,
+        ),
         label_direction="LTR",
     )
     g.append(text_area)
@@ -342,7 +345,9 @@ def render_particle_value_value_label(g, particle_value):
     g.append(text_area)
 
 
-def render_particle_value_line(plot, particle_value, bin_heights, width, rangex, rangey, facecolor):
+def render_particle_value_line(
+    plot, particle_value, bin_heights, width, rangex, rangey, facecolor
+):
     # To draw the particle value, we need to create a rectangle, the same
     # way we create the histogram bars
 
@@ -389,18 +394,14 @@ def render_particle_value_line_label(g, c):
 
 def render_logo(g):
     # Add the Signaloid logo to the top right corner of the screen
-    bitmap = displayio.OnDiskBitmap(
-        open("assets/signaloid_logo_24x24.bmp", "rb")
-    )
+    bitmap = displayio.OnDiskBitmap(open("assets/signaloid_logo_24x24.bmp", "rb"))
     sprite = displayio.TileGrid(
         bitmap,
         pixel_shader=bitmap.pixel_shader,
         width=1,
         height=1,
     )
-    sprite.x = (
-        board.DISPLAY.width - SIGNALOID_LOGO_SIZE - SIGNALOID_LOGO_MARGIN
-    )
+    sprite.x = board.DISPLAY.width - SIGNALOID_LOGO_SIZE - SIGNALOID_LOGO_MARGIN
     sprite.y = SIGNALOID_LOGO_MARGIN
     g.append(sprite)
 
@@ -442,17 +443,14 @@ def bar(
     render_bg_plot(g)
     plot = create_main_plot(g)
 
-    boundary_positions, boundary_multiplier = transform_array_with_multiplier(boundary_positions)
+    boundary_positions, boundary_multiplier = transform_array_with_multiplier(
+        boundary_positions
+    )
     bin_heights, bin_heights_multiplier = transform_array_with_multiplier(bin_heights)
     width = apply_array_multiplier(width, boundary_multiplier)
 
     c, rangex, rangey = render_histogram(
-        plot,
-        boundary_positions,
-        bin_heights,
-        width,
-        align,
-        edgecolor
+        plot, boundary_positions, bin_heights, width, align, edgecolor
     )
 
     render_x_multiplier(g, c, boundary_multiplier)
@@ -463,7 +461,7 @@ def bar(
             g,
             plot_data.dist.nan_dirac_delta.mass,
             plot_data.dist.neg_inf_dirac_delta.mass,
-            plot_data.dist.pos_inf_dirac_delta.mass
+            plot_data.dist.pos_inf_dirac_delta.mass,
         )
 
     render_title(g, title)
@@ -472,11 +470,8 @@ def bar(
     render_y_axis_label(g)
 
     # Show the particle value
-    if (
-        particle_value is not None
-        and np.isfinite(particle_value)
-    ):
-        particle_value_normalized = particle_value / (10 ** boundary_multiplier)
+    if particle_value is not None and np.isfinite(particle_value):
+        particle_value_normalized = particle_value / (10**boundary_multiplier)
         if (
             particle_value_normalized >= rangex[0]
             and particle_value_normalized <= rangex[1]
@@ -488,7 +483,7 @@ def bar(
                 width,
                 rangex,
                 rangey,
-                facecolor
+                facecolor,
             )
             render_particle_value_line_label(g, c)
 

@@ -18,17 +18,15 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+from __future__ import annotations
 import math
 import sys
 import re
 import struct
 
-if sys.implementation.name != 'circuitpython':
-    from typing import Optional, Union
-
+if sys.implementation.name != "circuitpython":
     # Use numpy for accelerated computing
     import numpy as np
-    from numpy.typing import NDArray
 else:
     # Use the extended version of ulab's numpy when running on CircuitPython
     from signaloid.circuitpython.extended_ulab_numpy import np  # type: ignore[no-redef]
@@ -57,37 +55,39 @@ STRUCT_FORMATS: dict[str, dict[str, str]] = {
         "position_single": "<f",
         "position_double": "<d",
         "mass": "<Q",
-    }
+    },
 }
 
 
 class DistributionalValue:
     def __init__(
         self,
-        particle_value: Optional[float] = None,
-        UR_type: Optional[int] = None,
-        dirac_deltas: Optional[list[DiracDelta]] = None,
-        double_precision: bool = True
+        particle_value: float | None = None,
+        UR_type: int | None = None,
+        dirac_deltas: list[DiracDelta] | None = None,
+        double_precision: bool = True,
     ) -> None:
-        self.particle_value: Optional[float] = particle_value
-        self.UR_type: Optional[int] = UR_type
-        self._dirac_deltas: list[DiracDelta] = dirac_deltas if dirac_deltas is not None else []
+        self.particle_value: float | None = particle_value
+        self.UR_type: int | None = UR_type
+        self._dirac_deltas: list[DiracDelta] = (
+            dirac_deltas if dirac_deltas is not None else []
+        )
         self.double_precision = double_precision
         """
         properties
         """
-        self._mean: Optional[float] = None
-        self._variance: Optional[float] = None
+        self._mean: float | None = None
+        self._variance: float | None = None
 
         self.nan_dirac_delta: DiracDelta = DiracDelta(position=np.nan, mass=np.nan)
         self.neg_inf_dirac_delta: DiracDelta = DiracDelta(position=-np.inf, mass=np.nan)
         self.pos_inf_dirac_delta: DiracDelta = DiracDelta(position=np.inf, mass=np.nan)
 
-        self._has_no_zero_mass: Optional[bool] = None
-        self._is_finite: Optional[bool] = None
-        self._is_sorted: Optional[bool] = None
-        self._is_cured: Optional[bool] = None
-        self._is_full_valid_TTR: Optional[bool] = None
+        self._has_no_zero_mass: bool | None = None
+        self._is_finite: bool | None = None
+        self._is_sorted: bool | None = None
+        self._is_cured: bool | None = None
+        self._is_full_valid_TTR: bool | None = None
 
     @property
     def dirac_deltas(self) -> list[DiracDelta]:
@@ -112,41 +112,47 @@ class DistributionalValue:
         return self.dirac_deltas
 
     @property
-    def positions(self) -> NDArray[np.float64]:
+    def positions(self) -> np.ndarray:
         """The list af all the Dirac Delta positions.
 
         :return: The list of all the Dirac Delta positions.
-        :rtype: NDArray[np.float64]
+        :rtype: np.ndarray
         """
-        arr: NDArray[np.float64] = np.array([dd.position for dd in self.dirac_deltas], dtype=np.float64)
+        arr: np.ndarray = np.array(
+            [dd.position for dd in self.dirac_deltas], dtype=np.float64
+        )
         return arr
 
     @property
-    def masses(self) -> NDArray[np.float64]:
+    def masses(self) -> np.ndarray:
         """The list af all the Dirac Delta floating-point masses.
 
         :return: The list of all the Dirac Delta floating-point masses.
-        :rtype: NDArray[np.float64]
+        :rtype: np.ndarray
         """
-        arr: NDArray[np.float64] = np.array([dd.mass for dd in self.dirac_deltas], dtype=np.float64)
+        arr: np.ndarray = np.array(
+            [dd.mass for dd in self.dirac_deltas], dtype=np.float64
+        )
         return arr
 
     @property
-    def raw_masses(self) -> NDArray[np.uint64]:
+    def raw_masses(self) -> np.ndarray:
         """The list af all the Dirac Delta fixed-point masses.
 
         :return: The list of all the Dirac Delta fixed-point masses.
-        :rtype: NDArray[np.uint64]
+        :rtype: np.ndarray
         """
-        arr: NDArray[np.uint64] = np.array([dd.raw_mass for dd in self.dirac_deltas], dtype=np.uint64)
+        arr: np.ndarray = np.array(
+            [dd.raw_mass for dd in self.dirac_deltas], dtype=np.uint64
+        )
         return arr
 
     @property
-    def mean(self) -> Optional[float]:
+    def mean(self) -> float | None:
         """The mean position of all the Dirac Deltas.
 
         :return: The mean position of all the Dirac Deltas.
-        :rtype: Optional[float]
+        :rtype: float | None
         """
         if self._mean is None:
             self.calculate_mean()
@@ -154,16 +160,16 @@ class DistributionalValue:
         return self._mean
 
     @mean.setter
-    def mean(self, mean: Optional[float]):
+    def mean(self, mean: float | None):
         """Sets the mean position of all the Dirac Deltas explicitly (it does
         not interfere with the Dirac Deltas list).
 
         :param mean: The mean value to use.
-        :type mean: Optional[float]
+        :type mean: float | None
         """
         self._mean = mean
 
-    def calculate_mean(self) -> Optional[float]:
+    def calculate_mean(self) -> float | None:
         """Calculated the mean position of all the Dirac Deltas based on the
         Dirac Deltas list.
 
@@ -199,38 +205,33 @@ class DistributionalValue:
         return len(self.dirac_deltas)
 
     @property
-    def variance(self) -> Optional[float]:
+    def variance(self) -> float | None:
         """The positional variance of all the Dirac Deltas.
 
         :return: The positional variance of all the Dirac Deltas.
-        :rtype: Optional[float]
+        :rtype: float | None
         """
         if self._variance is None:
             self.calculate_variance()
 
         return self._variance
 
-    def calculate_variance(self) -> Optional[float]:
+    def calculate_variance(self) -> float | None:
         """Calculates the positional variance of all the Dirac Deltas.
 
         :return: The calculated positional variance of all the Dirac Deltas.
-        :rtype: Optional[float]
+        :rtype: float | None
         """
         # Calculate weighted sample variance
-        if (
-            self.mean is None
-            or self.UR_order == 0
-            or not np.isfinite(self.mean)
-        ):
+        if self.mean is None or self.UR_order == 0 or not np.isfinite(self.mean):
             self._variance = None
         else:
             total_mass: float = 0
             total_weighted_squared_diffs: float = 0
             for dd in self.dirac_deltas:
                 total_weighted_squared_diffs += (
-                    ((dd.position - self.mean) ** 2)
-                    * dd.mass
-                )
+                    (dd.position - self.mean) ** 2
+                ) * dd.mass
                 total_mass += dd.mass
 
             self._variance = total_weighted_squared_diffs / total_mass
@@ -280,7 +281,7 @@ class DistributionalValue:
         result = self.export(to_str=False)
         return result if isinstance(result, bytes) else bytes()
 
-    def export(self, to_str: bool = True) -> Union[str, bytes]:
+    def export(self, to_str: bool = True) -> str | bytes:
         """
         Constructs the Ux string/Ux bytes with particle value for the `DistributionalValue`.
 
@@ -320,13 +321,17 @@ class DistributionalValue:
 
         if to_str:
             # Particle value (double in string format)
-            UxString += str(self.particle_value) if self.particle_value is not None else ""
+            UxString += (
+                str(self.particle_value) if self.particle_value is not None else ""
+            )
             UxString += "Ux"
 
             fmt = STRUCT_FORMATS["str"]
         else:
             # Particle value (double)                           (8 bytes)
-            particle_value = self.particle_value if self.particle_value is not None else 0
+            particle_value = (
+                self.particle_value if self.particle_value is not None else 0
+            )
             fmt = STRUCT_FORMATS["bytes"]
             buffer += struct.pack(fmt["particle"], particle_value)
 
@@ -344,7 +349,9 @@ class DistributionalValue:
         buffer += struct.pack(fmt["UR_order"], self.UR_order)
 
         # Choose the format based on double_precision flag
-        position_format = fmt["position_double" if self.double_precision else "position_single"]
+        position_format = fmt[
+            "position_double" if self.double_precision else "position_single"
+        ]
 
         # Pairs of:
         # - Support position (double or float)              (8 or 4 bytes)
@@ -363,9 +370,8 @@ class DistributionalValue:
 
     @staticmethod
     def parse(
-        dist: Union[str, bytes],
-        double_precision: Optional[bool] = None
-    ) -> "Optional[DistributionalValue]":
+        dist: str | bytes, double_precision: bool | None = None
+    ) -> "DistributionalValue | None":
         """
         Constructs a `DistributionalValue` after parsing an input that can be
         a UxString or a byte array.
@@ -423,7 +429,7 @@ class DistributionalValue:
 
             # Match an optional floating-point or integer number, followed by 'Ux',
             # and then hexadecimal characters
-            if sys.implementation.name == 'circuitpython':
+            if sys.implementation.name == "circuitpython":
                 parts = dist.split("Ux")
                 index = 0
                 if len(parts) == 2:
@@ -432,12 +438,16 @@ class DistributionalValue:
 
                 buffer = bytes.fromhex(parts[index])
             else:
-                pattern = r"^([-+]?\d*\.?\d+(?:e[-+]\d+)?|nan|[-+]?inf)?Ux([0-9A-Fa-f]+)$"
+                pattern = (
+                    r"^([-+]?\d*\.?\d+(?:e[-+]\d+)?|nan|[-+]?inf)?Ux([0-9A-Fa-f]+)$"
+                )
                 match = re.match(pattern, dist)
                 if not match:
                     return None
 
-                dist_value.particle_value = float(match.group(1)) if match.group(1) else None
+                dist_value.particle_value = (
+                    float(match.group(1)) if match.group(1) else None
+                )
 
                 buffer = bytes.fromhex(match.group(2))
         elif isinstance(dist, (bytes, bytearray)):
@@ -445,7 +455,9 @@ class DistributionalValue:
             fmt = STRUCT_FORMATS["bytes"]
 
             buffer = dist
-            dist_value.particle_value = struct.unpack(fmt["particle"], buffer[offset:offset + 8])[0]
+            dist_value.particle_value = struct.unpack(
+                fmt["particle"], buffer[offset : offset + 8]
+            )[0]
             offset += 8
         else:
             print("Error: ", type(dist))
@@ -457,26 +469,24 @@ class DistributionalValue:
         if len(buffer) < min_length:
             return None
 
-        dist_value.UR_type = struct.unpack(fmt["UR_type"], buffer[offset:offset + 1])[0]
+        dist_value.UR_type = struct.unpack(fmt["UR_type"], buffer[offset : offset + 1])[
+            0
+        ]
         offset += 1
 
         # Not used, uncomment if needed
         # number_of_samples = struct.unpack(fmt["sample_count"], buffer[offset:offset + 8])[0]
         offset += 8
 
-        dist_value.mean = struct.unpack(fmt["mean"], buffer[offset:offset + 8])[0]
+        dist_value.mean = struct.unpack(fmt["mean"], buffer[offset : offset + 8])[0]
         offset += 8
 
-        UR_order = struct.unpack(fmt["UR_order"], buffer[offset:offset + 4])[0]
+        UR_order = struct.unpack(fmt["UR_order"], buffer[offset : offset + 4])[0]
         offset += 4
 
         # Validate UR_order - reasonable upper limit to prevent processing
         # extremely large inputs that might be malicious
-        if (
-            UR_order is None
-            or UR_order < 0
-            or UR_order > 10000
-        ):
+        if UR_order is None or UR_order < 0 or UR_order > 10000:
             return None
 
         # Calculate expected length based on UR_order
@@ -497,14 +507,16 @@ class DistributionalValue:
             if len(buffer) < expected_length:
                 return None
 
-        position_format = fmt["position_double" if double_precision else "position_single"]
+        position_format = fmt[
+            "position_double" if double_precision else "position_single"
+        ]
 
         for _ in range(UR_order):
-            support_position_bytes = buffer[offset:offset + bytes_per_position]
+            support_position_bytes = buffer[offset : offset + bytes_per_position]
             offset += bytes_per_position
             position = struct.unpack(position_format, support_position_bytes)[0]
 
-            mass_bytes = buffer[offset:offset + 8]
+            mass_bytes = buffer[offset : offset + 8]
             offset += 8
             raw_mass = struct.unpack(fmt["mass"], mass_bytes)[0]
 
@@ -545,7 +557,7 @@ class DistributionalValue:
         return abs((self.mean - other.mean) / other.mean)
 
     @property
-    def has_no_zero_mass(self) -> Optional[bool]:
+    def has_no_zero_mass(self) -> bool | None:
         """
         The property that no Dirac delta of the `DistributionalValue` has a zero mass.
 
@@ -557,7 +569,7 @@ class DistributionalValue:
 
         return self._has_no_zero_mass
 
-    def check_has_no_zero_mass(self) -> Optional[bool]:
+    def check_has_no_zero_mass(self) -> bool | None:
         """
         Checks the property that no Dirac delta of the `DistributionalValue` has a zero
         mass.
@@ -589,7 +601,7 @@ class DistributionalValue:
         self._has_no_zero_mass = True
 
     @property
-    def is_finite(self) -> Optional[bool]:
+    def is_finite(self) -> bool | None:
         """
         The property that all Dirac deltas of the `DistributionalValue` have finite
         positions, i.e., no NaN, -Inf, or Inf values.
@@ -603,7 +615,7 @@ class DistributionalValue:
 
         return self._is_finite
 
-    def check_is_finite(self) -> Optional[bool]:
+    def check_is_finite(self) -> bool | None:
         """
         Checks the property that all Dirac deltas of the `DistributionalValue` have
         finite positions, i.e., no NaN, -Inf, or Inf values.
@@ -622,7 +634,7 @@ class DistributionalValue:
         return True
 
     @property
-    def is_sorted(self) -> Optional[bool]:
+    def is_sorted(self) -> bool | None:
         """
         The property that the Dirac deltas of the `DistributionalValue` are sorted
         according to their positions. The NaN, -Inf, and Inf positional values
@@ -637,7 +649,7 @@ class DistributionalValue:
 
         return self._is_sorted
 
-    def check_is_sorted(self) -> Optional[bool]:
+    def check_is_sorted(self) -> bool | None:
         """
         Checks The property that the Dirac deltas of the `DistributionalValue` are
         sorted according to their positions. The NaN, -Inf, and Inf positional values
@@ -697,7 +709,7 @@ class DistributionalValue:
         self._is_sorted = True
 
     @property
-    def is_cured(self) -> Optional[bool]:
+    def is_cured(self) -> bool | None:
         """
         The property that no two Dirac deltas of the `DistributionalValue` have
         the same positional value, including NaN, -Inf, and Inf.
@@ -711,7 +723,7 @@ class DistributionalValue:
 
         return self._is_cured
 
-    def check_is_cured(self) -> Optional[bool]:
+    def check_is_cured(self) -> bool | None:
         """
         Checks the property that no two Dirac deltas of the `DistributionalValue` have
         the same positional value, including NaN, -Inf, and Inf.
@@ -773,9 +785,8 @@ class DistributionalValue:
             mean_threshold = finite_mean * relative_mean_threshold
 
             range_threshold = (
-                (self.finite_dirac_deltas[-1].position - self.dirac_deltas[0].position)
-                * relative_range_threshold
-            )
+                self.finite_dirac_deltas[-1].position - self.dirac_deltas[0].position
+            ) * relative_range_threshold
 
             threshold = max(mean_threshold, range_threshold)
 
@@ -797,7 +808,7 @@ class DistributionalValue:
         self._is_cured = True
 
     @property
-    def is_full_valid_TTR(self) -> Optional[bool]:
+    def is_full_valid_TTR(self) -> bool | None:
         """
         The property that the Dirac deltas of the `DistributionalValue` form
         a full valid TTR. "Full" means that there are 2^n Dirac deltas (after
@@ -814,7 +825,7 @@ class DistributionalValue:
 
         return self._is_full_valid_TTR
 
-    def check_is_full_valid_TTR(self) -> Optional[bool]:
+    def check_is_full_valid_TTR(self) -> bool | None:
         """
         Checks the property that the Dirac deltas of the `DistributionalValue`
         form a full and valid TTR. "Full" means that there are 2^n Dirac deltas

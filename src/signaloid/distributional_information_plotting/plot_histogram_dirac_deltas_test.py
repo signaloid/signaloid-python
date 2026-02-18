@@ -24,7 +24,9 @@ import unittest
 import numpy as np
 
 from signaloid.distributional.dirac_delta import DiracDelta
-from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import PlotData
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
+    PlotData,
+)
 
 
 class TestCreateBinning(unittest.TestCase):
@@ -55,8 +57,7 @@ class TestCreateBinning(unittest.TestCase):
 
             dirac_deltas = [
                 DiracDelta(position, mass=mass)
-                for position, mass in
-                zip(dirac_delta_positions, dirac_delta_masses)
+                for position, mass in zip(dirac_delta_positions, dirac_delta_masses)
             ]
             dirac_deltas.sort()
 
@@ -69,21 +70,26 @@ class TestCreateBinning(unittest.TestCase):
 
             for j in range(number_of_dirac_deltas[i]):
                 probability_under_first_bin = bin_widths[2 * j] * bin_heights[2 * j]
-                probability_under_second_bin = bin_widths[2 * j + 1] * bin_heights[2 * j + 1]
-                probability_under_bins = probability_under_first_bin + probability_under_second_bin
+                probability_under_second_bin = (
+                    bin_widths[2 * j + 1] * bin_heights[2 * j + 1]
+                )
+                probability_under_bins = (
+                    probability_under_first_bin + probability_under_second_bin
+                )
                 mean_of_first_bin = boundary_positions[2 * j] + bin_widths[2 * j] / 2
-                mean_of_second_bin = boundary_positions[2 * j + 1] + bin_widths[2 * j + 1] / 2
+                mean_of_second_bin = (
+                    boundary_positions[2 * j + 1] + bin_widths[2 * j + 1] / 2
+                )
                 mean_of_bins = (
-                    mean_of_first_bin * probability_under_first_bin +
-                    mean_of_second_bin * probability_under_second_bin
+                    mean_of_first_bin * probability_under_first_bin
+                    + mean_of_second_bin * probability_under_second_bin
                 ) / probability_under_bins
                 self.assertLess(
                     abs(input_ensemble[j].mass - probability_under_bins),
-                    probability_threshold
+                    probability_threshold,
                 )
                 self.assertLess(
-                    abs(input_ensemble[j].position - mean_of_bins),
-                    position_threshold
+                    abs(input_ensemble[j].position - mean_of_bins), position_threshold
                 )
 
     def test_create_binning_property_preserve_ttr(self) -> None:
@@ -103,24 +109,23 @@ class TestCreateBinning(unittest.TestCase):
 
         for i in range(number_of_testcases):
             gaussian_mean = np.random.uniform(*gaussian_mean_range)
-            gaussian_standard_deviation = np.random.uniform(*gaussian_standard_deviation_range)
+            gaussian_standard_deviation = np.random.uniform(
+                *gaussian_standard_deviation_range
+            )
             dirac_delta_positions = np.random.normal(
                 gaussian_mean, gaussian_standard_deviation, number_of_samples
             )
-            dirac_delta_masses = [1/number_of_samples] * number_of_samples
+            dirac_delta_masses = [1 / number_of_samples] * number_of_samples
             ttr_order = random.sample(range(4, 11), 1)[0]
 
             input_dirac_deltas = [
                 DiracDelta(position, mass=mass)
-                for position, mass in
-                zip(dirac_delta_positions, dirac_delta_masses)
+                for position, mass in zip(dirac_delta_positions, dirac_delta_masses)
             ]
 
-            input_ttr_dirac_deltas = dirac_deltas_to_ttr(
-                input_dirac_deltas, ttr_order
-            )
+            input_ttr_dirac_deltas = dirac_deltas_to_ttr(input_dirac_deltas, ttr_order)
 
-            if len(input_ttr_dirac_deltas) != 2 ** ttr_order:
+            if len(input_ttr_dirac_deltas) != 2**ttr_order:
                 continue
             ttr_orders.append(ttr_order)
             input_ttrs.append(input_ttr_dirac_deltas)
@@ -133,33 +138,29 @@ class TestCreateBinning(unittest.TestCase):
             )
 
             binning_dirac_deltas: list[DiracDelta] = []
-            for position, width, height in zip(boundary_positions[:-1], bin_widths, bin_heights):
-                binning_dirac_deltas.append(DiracDelta(
-                    position=position + width / 2,
-                    mass=width * height
-                ))
+            for position, width, height in zip(
+                boundary_positions[:-1], bin_widths, bin_heights
+            ):
+                binning_dirac_deltas.append(
+                    DiracDelta(position=position + width / 2, mass=width * height)
+                )
 
-            binning_ttr = dirac_deltas_to_ttr(
-                binning_dirac_deltas, exponent
-            )
+            binning_ttr = dirac_deltas_to_ttr(binning_dirac_deltas, exponent)
 
             self.assertEqual(len(input_ttr), len(binning_ttr))
 
             for input_ttr_dd, binning_ttr_dd in zip(input_ttr, binning_ttr):
                 self.assertLess(
-                    abs(input_ttr_dd.mass - binning_ttr_dd.mass),
-                    probability_threshold
+                    abs(input_ttr_dd.mass - binning_ttr_dd.mass), probability_threshold
                 )
                 self.assertLess(
                     abs(input_ttr_dd.position - binning_ttr_dd.position),
-                    position_threshold
+                    position_threshold,
                 )
 
 
 def dirac_deltas_to_ttr(
-    dirac_deltas: list[DiracDelta],
-    order: int,
-    count: int = 0
+    dirac_deltas: list[DiracDelta], order: int, count: int = 0
 ) -> list[DiracDelta]:
     """
     Computes the TTR for an input ensemble of Dirac deltas.
@@ -198,7 +199,9 @@ def dirac_deltas_to_ttr(
 
         current_dirac_delta = [DiracDelta(average_position, mass=total_mass)]
         low_dirac_deltas = [dd for dd in dirac_deltas if dd.position < average_position]
-        high_dirac_deltas = [dd for dd in dirac_deltas if dd.position >= average_position]
+        high_dirac_deltas = [
+            dd for dd in dirac_deltas if dd.position >= average_position
+        ]
 
     ttr: list[DiracDelta] = []
     if order > 0:

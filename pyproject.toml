@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "signaloid"
-version = "1.7.0"
+version = "1.7.2"
 description = ""
 authors = [
 	"Signaloid <info@signaloid.com>"
@@ -18,6 +18,7 @@ pytest = "^8.4.2"
 mypy = "^1.19.1"
 flake8 = "^7.3.0"
 toml = "^0.10.2"
+black = {version = "^25.11.0", python = ">=3.9"}
 
 [build-system]
 requires = ["poetry_core>=1.0.0"]
@@ -34,6 +35,8 @@ signaloid-uxdata-toolkit = "signaloid.uxdata_toolkit:main"
 [tool.mypy]
 warn_unused_configs = true
 strict = true
+disallow_any_generics = false
+python_version = "3.9"
 
 [[tool.mypy.overrides]]
 module = [
