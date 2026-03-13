@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 #   Copyright (c) 2026, Signaloid.
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -25,27 +23,96 @@ Signaloid UxData Toolkit
 
 A set of tools for working with Signaloid Ux data.
 
+Ux-string format specification:
+    - Particle value (double in string format)
+    - "Ux"                                              (   2 chars)
+    - Representation type (uint8_t)                     (   2 chars)
+    - Number of samples (uint64_t)                      (  16 chars) (unused)
+    - Mean value of distribution (double)               (  16 chars)
+    - Number of non-zero mass Dirac deltas (uint32_t)   (   8 chars)
+    - Pairs of:
+        - Support position (float/double)               (8/16 chars)
+        - Probability mass (uint64_t)                   (  16 chars)
+
+Ux-bytes specification:
+    - Particle value (double)                           (  8 bytes)
+    - Representation type (uint8_t)                     (  1 byte )
+    - Number of samples (uint64_t)                      (  8 bytes) (unused)
+    - Mean value of distribution (double)               (  8 bytes)
+    - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+    - Pairs of:
+        - Support position (float/double)               (4/8 bytes)
+        - Probability mass (uint64_t)                   (  8 bytes)
+
 Requirements:
 - pip install git+https://github.com/signaloid/signaloid-python
 """
 
+from __future__ import annotations
 import argparse
 import sys
 import traceback
 from typing import Any
-
-import matplotlib
-import matplotlib.pyplot as plt
-
 from signaloid.distributional.distributional import DistributionalValue
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,
 )
 from signaloid.distributional_information_plotting.plot_wrapper import plot
+from signaloid.distributional_information_plotting.sample_generator import (
+    sample_from_distributional_value,
+)
+import numpy as np
 
 
-def parse_arguments() -> argparse.Namespace:
-    # Create the parser
+def _parse_ux_data(ux_data_raw: str) -> DistributionalValue:
+    """Validate, parse, and print info for a Ux-data string.
+
+    Args:
+        ux_data_raw: Raw Ux-string or Ux-bytes from CLI input.
+
+    Returns:
+        The parsed DistributionalValue.
+
+    Raises:
+        SystemExit: If the input is empty.
+        ValueError: If the input cannot be parsed into a DistributionalValue.
+    """
+    ux_data = ux_data_raw.strip()
+
+    if not ux_data:
+        print("Error: --ux-data cannot be an empty string.")
+        sys.exit(1)
+
+    print("\nParsing Ux-data...")
+
+    dist_value = DistributionalValue.parse(ux_data)
+    if dist_value is None:
+        raise ValueError("Failed to parse Ux-data into DistributionalValue.")
+
+    print("Successfully parsed Ux-data!")
+    print(f"Particle value: {dist_value.particle_value}")
+    print(f"Mean: {dist_value.mean}")
+    print(f"Variance: {dist_value.variance}")
+    print(f"Number of Dirac deltas: {dist_value.UR_order}")
+    print(f"Double Precision: {dist_value.double_precision}")
+
+    return dist_value
+
+
+def _positive_int(value: str) -> int:
+    """Argparse type that enforces a positive integer (>= 1)."""
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: '{value}'")
+    if ivalue < 1:
+        raise argparse.ArgumentTypeError(
+            f"--num-samples must be a positive integer (>= 1), got {ivalue}"
+        )
+    return ivalue
+
+
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Set of tools for working with Signaloid Ux data."
     )
@@ -55,11 +122,10 @@ def parse_arguments() -> argparse.Namespace:
         title="Command",
     )
 
-    # Register all command parsers
     command_plot_parser(command_subparsers)
+    command_sample_parser(command_subparsers)
 
-    # Parse the arguments
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return args
 
 
@@ -71,9 +137,9 @@ def command_plot_parser(command_subparsers: Any) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example:
-  %(prog)s 0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
-  %(prog)s 09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080
-  %(prog)s -o output.png 0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
+  %(prog)s --ux-data=0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
+  %(prog)s --ux-data=09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080
+  %(prog)s -o output.png --ux-data=0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
         """,
     )
 
@@ -81,90 +147,45 @@ Example:
         "-o",
         "--output",
         type=str,
-        default="plot.png",
-        help="Output PNG filename (default: plot.png)",
+        help="Output PNG filename (if not specified, displays plot interactively)",
     )
 
     plot_parser.add_argument(
-        "ux_data",
+        "--ux-data",
         type=str,
+        required=True,
         help='Ux-string or Ux-bytes to plot (e.g., "90.6Ux04000000...")',
     )
 
+    plot_parser.set_defaults(func=command_plot)
+
 
 def command_plot(args: argparse.Namespace) -> None:
-    """
-    Ux-Data Plotter
-
-    This script reads a Signaloid Ux-string or Ux-bytes from command-line arguments and plots
-    the distributional data using the signaloid-python library.
-
-    Ux-string format specification:
-        - Particle value (double in string format)
-        - "Ux"                                              (   2 chars)
-        - Representation type (uint8_t)                     (   2 chars)
-        - Number of samples (uint64_t)                      (  16 chars) (unused)
-        - Mean value of distribution (double)               (  16 chars)
-        - Number of non-zero mass Dirac deltas (uint32_t)   (   8 chars)
-        - Pairs of:
-            - Support position (float/double)               (8/16 chars)
-            - Probability mass (uint64_t)                   (  16 chars)
-
-    Ux-bytes specification:
-        - Particle value (double)                           (  8 bytes)
-        - Representation type (uint8_t)                     (  1 byte )
-        - Number of samples (uint64_t)                      (  8 bytes) (unused)
-        - Mean value of distribution (double)               (  8 bytes)
-        - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
-        - Pairs of:
-            - Support position (float/double)               (4/8 bytes)
-            - Probability mass (uint64_t)                   (  8 bytes)
+    """Plot a Signaloid Ux distributional value.
 
     Example usage:
-        signaloid-uxdata-toolkit plot 0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
-        signaloid-uxdata-toolkit plot 09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080
-        signaloid-uxdata-toolkit plot -o output.png 0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000
+        signaloid-uxdata-toolkit plot --ux-data=0.40007Ux000...
+        signaloid-uxdata-toolkit plot -o output.png --ux-data=0.40007Ux000...
     """
-    ux_data: str = args.ux_data.strip()
-
     print("Signaloid Ux-data Plotter")
     print("=" * 50)
 
-    # Validate input
-    if not ux_data:
-        print("Error: Empty Ux-data provided.")
-        sys.exit(1)
-
     try:
-        # Parse the Ux string into a DistributionalValue object
-        print("\nParsing Ux-data...")
-
-        dist_value = DistributionalValue.parse(ux_data)
-        if dist_value is None:
-            raise ValueError("Failed to parse Ux-data into DistributionalValue.")
-
-        # Display basic information about the distribution
-        print("Successfully parsed Ux-data!")
-        print(f"Particle value: {dist_value.particle_value}")
-        print(f"Mean: {dist_value.mean}")
-        print(f"Variance: {dist_value.variance}")
-        print(f"Number of Dirac deltas: {dist_value.UR_order}")
-        print(f"Double Precision: {dist_value.double_precision}")
+        dist_value = _parse_ux_data(args.ux_data)
 
         # Create PlotData object from the distributional value
         print("\nPreparing plot data...")
         plot_data = PlotData(dist_value)
 
-        # Set matplotlib to non-interactive backend for saving
-        matplotlib.use("Agg")
-
         # Plot the distribution using the plot wrapper function
         print("Generating plot...")
-        plot(plot_data)
 
-        # Save the figure to file
-        plt.savefig(args.output, dpi=300, bbox_inches="tight")
-        print(f"✓ Plot saved to: {args.output}")
+        if args.output is None:
+            # Show the plot interactively
+            plot(plot_data, save=False)
+        else:
+            plot(plot_data, path=args.output, save=True)
+
     except Exception as e:
         print(f"\nError parsing or plotting Ux-data: {e}")
         traceback.print_exc()
@@ -172,15 +193,86 @@ def command_plot(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def main() -> None:
+def command_sample_parser(command_subparsers: Any) -> None:
+    sample_parser = command_subparsers.add_parser(
+        "sample",
+        help="Sample from Signaloid Ux distributional data",
+        description="Sample from Signaloid Ux distributional data",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Example:
+%(prog)s --ux-data=0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000 --num-samples 10
+%(prog)s --ux-data=09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080 --num-samples 100
+%(prog)s -o samples.txt --ux-data=0.40007Ux0000000000000000013FD99AC12423C7C7000000013FD99AC12423C7C78000000000000000 --num-samples 10
+        """,
+    )
+
+    sample_parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        help="Output sample filename (example: samples.txt)",
+    )
+
+    sample_parser.add_argument(
+        "--num-samples",
+        type=_positive_int,
+        required=True,
+        help="Number of samples to generate (must be >= 1)",
+    )
+
+    sample_parser.add_argument(
+        "--ux-data",
+        type=str,
+        required=True,
+        help='Ux-string or Ux-bytes to sample from (e.g., "90.6Ux04000000...")',
+    )
+
+    sample_parser.set_defaults(func=command_sample)
+
+
+def command_sample(args: argparse.Namespace) -> None:
+    """Sample from a Signaloid Ux distributional value.
+
+    Example usage:
+        signaloid-uxdata-toolkit sample --ux-data=0.40007Ux000... --num-samples 10
+        signaloid-uxdata-toolkit sample -o samples.txt --ux-data=0.40007Ux000... --num-samples 100
+    """
+    print("Signaloid Ux-data Sampler")
+    print("=" * 50)
+
+    try:
+        dist_value = _parse_ux_data(args.ux_data)
+
+        # Generate the samples
+        print("Generating samples...")
+        samples = sample_from_distributional_value(dist_value, args.num_samples)
+
+        # Output the samples
+        if args.output:
+            np.savetxt(args.output, samples, delimiter=",")
+            print(f"Saved samples to: {args.output}")
+        else:
+            for sample in samples:
+                print(sample)
+    except Exception as e:
+        print(f"\nError parsing or sampling Ux-data: {e}")
+        traceback.print_exc()
+        print("\nPlease ensure you have a valid Ux-data format.")
+        sys.exit(1)
+
+
+def main(argv: list[str] | None = None) -> None:
     """
     Main function to parse and run the selected command.
     """
     # Parse arguments
-    args: argparse.Namespace = parse_arguments()
+    args: argparse.Namespace = parse_arguments(argv)
 
     if args.command == "plot":
         command_plot(args)
+    elif args.command == "sample":
+        command_sample(args)
     else:
         print("Unknown command. Use -h for help.")
         sys.exit(1)

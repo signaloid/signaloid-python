@@ -1,4 +1,4 @@
-#   Copyright (c) 2025, Signaloid.
+#   Copyright (c) 2026, Signaloid.
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a copy
 #   of this software and associated documentation files (the "Software"), to
@@ -174,7 +174,7 @@ class DiracDelta:
         return self.position != other.position
 
     def __ge__(self, other: "DiracDelta") -> bool:
-        """Checks if this Dirac Delta is greater than the given Dirac Delta.
+        """Checks if this Dirac Delta is greater than or equal to the given Dirac Delta.
 
         :param other: The second Dirac Delta to use for the comparison.
         :type other: DiracDelta

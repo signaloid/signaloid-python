@@ -1,4 +1,4 @@
-#   Copyright (c) 2025, Signaloid.
+#   Copyright (c) 2026, Signaloid.
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a copy
 #   of this software and associated documentation files (the "Software"), to
@@ -37,6 +37,7 @@ from signaloid.circuitpython.extended_ulab_numpy import np
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,
 )
+
 
 # The background color of the plot
 BG_COLOR = 0xFFFFFF
