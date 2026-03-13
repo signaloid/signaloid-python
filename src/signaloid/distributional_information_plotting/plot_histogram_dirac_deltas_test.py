@@ -64,7 +64,7 @@ class TestCreateBinning(unittest.TestCase):
             input_dirac_delta_ensembles.append(dirac_deltas)
 
         for i, input_ensemble in enumerate(input_dirac_delta_ensembles):
-            boundary_positions, bin_widths, bin_heights = PlotData._create_binning(
+            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
                 input_ensemble, 0, False
             )
 
@@ -133,7 +133,7 @@ class TestCreateBinning(unittest.TestCase):
         for i, input_ttr in enumerate(input_ttrs):
             exponent = ttr_orders[i]
 
-            boundary_positions, bin_widths, bin_heights = PlotData._create_binning(
+            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
                 input_ttr, exponent, True
             )
 

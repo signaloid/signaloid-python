@@ -35,7 +35,9 @@ from signaloid.distributional.distributional import DistributionalValue
 
 class PlotData:
     def __init__(
-        self, dist: DistributionalValue, plotting_resolution: int | None = None
+        self,
+        dist: DistributionalValue,
+        plotting_resolution: int | None = None,
     ) -> None:
         if dist.mean is None or dist.UR_order == 0:
             raise ValueError("Failed to load data")
@@ -369,7 +371,7 @@ class PlotData:
         return (boundary_positions, bin_widths, bin_heights)
 
     @staticmethod
-    def _create_binning(
+    def create_binning(
         finite_sorted_dirac_deltas: list[DiracDelta],
         exponent: int,
         use_ttr_binning: bool,
@@ -557,21 +559,33 @@ class PlotData:
                 "plot_histogram_dirac_deltas: plotting_resolution must be a power of 2!"
             )
 
-        # Create the binning such that the average of two bins surrounding a Dirac delta
-        # is the Dirac delta itself.
-        boundary_positions, bin_widths, bin_heights = PlotData._create_binning(
-            finite_dirac_deltas, 0, False
-        )
+        try:
+            # Create the binning such that the average of two bins surrounding a Dirac delta
+            # is the Dirac delta itself.
+            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
+                finite_dirac_deltas, 0, False
+            )
 
-        # Find the TTR of the created binning. This is always a valid TTR.
-        ttr = PlotData._bin_pdf_to_ttr(
-            boundary_positions, bin_widths, bin_heights, self.plotting_ttr_order
-        )
+            # Find the TTR of the created binning. This is always a valid TTR.
+            ttr = PlotData._bin_pdf_to_ttr(
+                boundary_positions, bin_widths, bin_heights, self.plotting_ttr_order
+            )
 
-        # Create the binning from the obtained (valid) TTR using the TTR binning method.
-        boundary_positions, bin_widths, bin_heights = PlotData._create_binning(
-            ttr, self.plotting_ttr_order, True
-        )
+            # Create the binning from the obtained (valid) TTR using the TTR binning method.
+            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
+                ttr, self.plotting_ttr_order, True
+            )
 
-        self.positions = boundary_positions
-        self.masses = bin_heights
+            self.positions = boundary_positions
+            self.masses = bin_heights
+        except (ValueError, TypeError):
+            positions = np.array([dd.position for dd in finite_dirac_deltas])
+            masses = np.array([dd.mass for dd in finite_dirac_deltas])
+
+            midpoints = (positions[:-1] + positions[1:]) / 2
+            left = 2 * positions[0] - midpoints[0]
+            right = 2 * positions[-1] - midpoints[-1]
+            self.positions = np.concatenate(([left], midpoints, [right]))
+
+            widths = np.diff(self.positions)
+            self.masses = masses / widths

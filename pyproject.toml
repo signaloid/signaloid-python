@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "signaloid"
-version = "1.7.2"
+version = "0.0.0"
 description = ""
 authors = [
 	"Signaloid <info@signaloid.com>"
@@ -10,24 +10,30 @@ packages = [
 	{ include = "signaloid", from = "src" }
 ]
 
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "pep440"
+
+
 [tool.poetry.group.dev.dependencies]
 wheel = "^0.46.3"
-pex = "^2.87.0"
 types-toml = "^0.10.8.20240310"
 pytest = "^8.4.2"
 mypy = "^1.19.1"
 flake8 = "^7.3.0"
 toml = "^0.10.2"
-black = {version = "^25.11.0", python = ">=3.9"}
+black = {version = "^25.11.0", python = ">=3.10"}
 
 [build-system]
-requires = ["poetry_core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.14"
+python = ">=3.10,<3.14"
 numpy = "~2.0.2"
 matplotlib = "~3.9.4"
+Pillow = "~12.1.1"
 
 [tool.poetry.scripts]
 signaloid-uxdata-toolkit = "signaloid.uxdata_toolkit:main"
@@ -36,7 +42,7 @@ signaloid-uxdata-toolkit = "signaloid.uxdata_toolkit:main"
 warn_unused_configs = true
 strict = true
 disallow_any_generics = false
-python_version = "3.9"
+python_version = "3.10"
 
 [[tool.mypy.overrides]]
 module = [

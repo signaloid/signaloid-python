@@ -1,4 +1,4 @@
-#   Copyright (c) 2024, Signaloid.
+#   Copyright (c) 2026, Signaloid.
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a copy
 #   of this software and associated documentation files (the "Software"), to
@@ -191,7 +191,10 @@ class DistributionalValue:
                 total_weighted_position += dd.position * dd.mass
                 total_mass += dd.mass
 
-            self._mean = total_weighted_position / total_mass
+            if total_mass == 0:
+                self._mean = np.nan
+            else:
+                self._mean = total_weighted_position / total_mass
 
         return self._mean
 
@@ -286,7 +289,7 @@ class DistributionalValue:
         Constructs the Ux string/Ux bytes with particle value for the `DistributionalValue`.
 
         Args:
-            to_str: Weather to export a Ux string or a Ux bytes
+            to_str: Whether to export a Ux string or a Ux bytes
                     - True: Export a Ux string
                     - False: Export a Ux bytes
 
@@ -551,7 +554,7 @@ class DistributionalValue:
             The relative difference between the mean values (normalized by
             the mean value of the other `DistributionalValue`).
         """
-        if self.mean is None or other.mean is None:
+        if self.mean is None or other.mean is None or other.mean == 0:
             return math.nan
 
         return abs((self.mean - other.mean) / other.mean)
