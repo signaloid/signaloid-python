@@ -179,6 +179,8 @@ def generate_samples(
     Returns:
         Array of samples drawn from the distribution.
     """
+    if len(cdf_values) != len(boundary_positions):
+        raise ValueError("cdf_values and boundary_positions length does not match.")
     us = np.random.uniform(0, 1, size=n)
     indices = np.searchsorted(cdf_values, us, side="right") - 1
     indices = np.clip(indices, 0, len(cdf_values) - 2)

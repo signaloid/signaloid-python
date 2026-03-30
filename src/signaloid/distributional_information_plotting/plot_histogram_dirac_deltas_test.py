@@ -18,11 +18,11 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+
 import random
 import unittest
 
 import numpy as np
-
 from signaloid.distributional.dirac_delta import DiracDelta
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,
@@ -157,6 +157,130 @@ class TestCreateBinning(unittest.TestCase):
                     abs(input_ttr_dd.position - binning_ttr_dd.position),
                     position_threshold,
                 )
+
+
+class TestPlotDataFromSamples(unittest.TestCase):
+    """Tests for PlotData.from_samples() (delegates to DistributionalValue)."""
+
+    def test_basic_finite_samples(self) -> None:
+        """from_samples should produce valid PlotData from finite floats."""
+        np.random.seed(42)
+        samples = np.random.normal(0, 1, 1000)
+        pd = PlotData.from_samples(samples)
+
+        self.assertGreater(len(pd.positions), 0)
+        self.assertGreater(len(pd.masses), 0)
+        self.assertFalse(pd.dist.has_special_values)
+        self.assertAlmostEqual(pd.dist.nan_dirac_delta.mass, 0.0)
+        self.assertAlmostEqual(pd.dist.neg_inf_dirac_delta.mass, 0.0)
+        self.assertAlmostEqual(pd.dist.pos_inf_dirac_delta.mass, 0.0)
+        self.assertIsNotNone(pd.dist.mean)
+
+    def test_density_integrates_to_approximately_one(self) -> None:
+        """Histogram density should integrate to ~1 when all samples are finite."""
+        np.random.seed(42)
+        samples = np.random.normal(5, 2, 10_000)
+        pd = PlotData.from_samples(samples)
+
+        bin_widths = pd.positions[1:] - pd.positions[:-1]
+        total_area = float(np.sum(bin_widths * pd.masses))
+        self.assertAlmostEqual(total_area, 1.0, places=1)
+
+    def test_special_value_masses(self) -> None:
+        """NaN, -Inf, +Inf masses should match their proportions."""
+        samples = np.array(
+            [1.0, 2.0, 3.0, np.nan, np.nan, -np.inf, np.inf, np.inf, np.inf, 4.0]
+        )
+        pd = PlotData.from_samples(samples)
+
+        self.assertTrue(pd.dist.has_special_values)
+        self.assertAlmostEqual(pd.dist.nan_dirac_delta.mass, 2 / 10)
+        self.assertAlmostEqual(pd.dist.neg_inf_dirac_delta.mass, 1 / 10)
+        self.assertAlmostEqual(pd.dist.pos_inf_dirac_delta.mass, 3 / 10)
+
+    def test_all_identical_samples(self) -> None:
+        """All-identical finite samples should produce a single Dirac delta."""
+        samples = np.full(100, 3.14)
+        pd = PlotData.from_samples(samples)
+
+        self.assertEqual(len(pd.positions), 1)
+        self.assertAlmostEqual(pd.positions[0], 3.14)
+        self.assertAlmostEqual(pd.masses[0], 1.0)
+
+    def test_empty_samples_raises(self) -> None:
+        """An empty array should raise ValueError."""
+        with self.assertRaises(ValueError):
+            PlotData.from_samples(np.array([]))
+
+    def test_plotting_resolution_is_power_of_two(self) -> None:
+        """The plotting_resolution should be a power of 2."""
+        np.random.seed(42)
+        samples = np.random.normal(0, 1, 1000)
+        pd = PlotData.from_samples(samples)
+
+        self.assertIsNotNone(pd.plotting_resolution)
+        assert pd.plotting_resolution is not None
+        self.assertEqual(pd.plotting_resolution & (pd.plotting_resolution - 1), 0)
+
+    def test_custom_plotting_resolution(self) -> None:
+        """plotting_resolution parameter should control the number of bins."""
+        np.random.seed(42)
+        samples = np.random.normal(0, 1, 1000)
+        pd = PlotData.from_samples(samples, plotting_resolution=32)
+
+        self.assertIsNotNone(pd.plotting_resolution)
+        assert pd.plotting_resolution is not None
+        self.assertLessEqual(pd.plotting_resolution, 32)
+
+    def test_mean_value_close_to_sample_mean(self) -> None:
+        """mean_value should be close to the mean of the finite samples."""
+        np.random.seed(42)
+        samples = np.random.normal(5, 1, 500)
+        pd = PlotData.from_samples(samples)
+
+        finite = samples[np.isfinite(samples)]
+        self.assertIsNotNone(pd.dist.mean)
+        assert pd.dist.mean is not None
+        self.assertAlmostEqual(pd.dist.mean, float(np.mean(finite)), places=5)
+
+    def test_plot_from_samples_succeeds(self) -> None:
+        """plot() should succeed when given PlotData built from samples."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from signaloid.distributional_information_plotting.plot_wrapper import (
+            plot,
+        )
+
+        np.random.seed(42)
+        samples = np.random.normal(0, 1, 500)
+        pd = PlotData.from_samples(samples)
+
+        result = plot(pd, path="/dev/null", save=True)
+        self.assertTrue(result)
+
+    def test_plot_from_samples_with_special_values_succeeds(self) -> None:
+        """plot() should succeed for samples containing NaN/Inf."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from signaloid.distributional_information_plotting.plot_wrapper import (
+            plot,
+        )
+
+        np.random.seed(42)
+        samples = np.concatenate(
+            [
+                np.random.normal(0, 1, 400),
+                np.full(50, np.nan),
+                np.full(25, np.inf),
+                np.full(25, -np.inf),
+            ]
+        )
+        pd = PlotData.from_samples(samples)
+
+        result = plot(pd, path="/dev/null", save=True)
+        self.assertTrue(result)
 
 
 def dirac_deltas_to_ttr(

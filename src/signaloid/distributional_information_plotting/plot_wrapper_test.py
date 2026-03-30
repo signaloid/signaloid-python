@@ -18,12 +18,15 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+
 from __future__ import annotations
+
 import csv
 import os
 import shutil
 import tempfile
 import unittest
+
 from signaloid.distributional.distributional import DistributionalValue
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,
@@ -41,8 +44,13 @@ def read_ux_strings_from_csv(csv_filename: str) -> list[str] | None:
     Returns:
         ux_strings: list of Ux strings
     """
+    __location__ = os.path.realpath(
+        os.path.join(os.getcwd(), os.path.dirname(__file__))
+    )
+    csv_filepath = os.path.join(__location__, csv_filename)
+
     ux_strings: list[str] = []
-    with open(csv_filename, "r") as csvfile:
+    with open(csv_filepath, "r") as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             ux_strings.append(row[0])
@@ -61,12 +69,11 @@ class TestPlotting(unittest.TestCase):
 
     def test_plot_wrapper(
         self,
-        input_filename: str = "src/signaloid/distributional/test_ux_value_pairs.csv",
+        input_filename: str = "../distributional/test_ux_value_pairs.csv",
     ) -> None:
         """
         Test parsing and plotting Ux Strings
         """
-
         # Read Ux strings from test data csv
         ux_strings = read_ux_strings_from_csv(input_filename)
         self.assertIsNotNone(ux_strings)
