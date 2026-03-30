@@ -53,6 +53,34 @@ class PlotData:
 
         self._construct_plot_data()
 
+    # Maximum number of bins for plotting
+    MAX_BINS: int = 1024
+
+    @classmethod
+    def from_samples(
+        cls,
+        samples: np.ndarray | list[float],
+        plotting_resolution: int | None = None,
+    ) -> PlotData:
+        """
+        Construct a PlotData from an array of float samples.
+
+        Creates a `DistributionalValue` from the samples (each sample
+        becomes an equal-weight Dirac delta) and then builds the plot
+        data through the standard TTR binning pipeline.
+
+        Args:
+            samples: 1-D array of float samples (may contain NaN/Inf).
+            plotting_resolution: Number of bins for the plot (must be a
+                power of 2). If `None`, automatically determined from
+                the data.
+
+        Returns:
+            A PlotData instance ready to be passed to plot().
+        """
+        dist = DistributionalValue.from_samples(samples)
+        return cls(dist, plotting_resolution=plotting_resolution)
+
     @property
     def positions(self) -> np.ndarray:
         """The boundary positions list.
@@ -185,31 +213,45 @@ class PlotData:
 
         if not use_ttr_binning:
             # Determine the 'NaN'-valued boundary points from adjacent Dirac deltas.
-            for i in range(2, number_of_boundaries - 1, 2):
-                if np.isnan(boundary_positions[i]):
-                    boundary_positions[i] = (
-                        boundary_probabilities[i - 1] * boundary_positions[i - 1]
-                        + boundary_probabilities[i + 1] * boundary_positions[i + 1]
-                    ) / (boundary_probabilities[i - 1] + boundary_probabilities[i + 1])
+            # Even indices (2, 4, ...) are the NaN-valued boundaries between
+            # odd-indexed Dirac delta positions.
+            even = slice(2, number_of_boundaries - 1, 2)
+            left_prob = boundary_probabilities[1 : number_of_boundaries - 2 : 2]
+            right_prob = boundary_probabilities[3:number_of_boundaries:2]
+            left_pos = boundary_positions[1 : number_of_boundaries - 2 : 2]
+            right_pos = boundary_positions[3:number_of_boundaries:2]
+            nan_mask = np.isnan(boundary_positions[even])
+            weighted_avg = (left_prob * left_pos + right_prob * right_pos) / (
+                left_prob + right_prob
+            )
+            boundary_positions[even] = np.where(
+                nan_mask, weighted_avg, boundary_positions[even]
+            )
 
             return (boundary_positions, boundary_probabilities)
 
         # First handle internal boundary positions.
         for n in range(exponent):
             step = 2**n
-            for i in range(2 ** (n + 1), number_of_boundaries - 1, 2 ** (n + 2)):
-                boundary_probabilities[i] = (
-                    boundary_probabilities[i - step] + boundary_probabilities[i + step]
-                )
-                boundary_positions[i] = (
-                    boundary_probabilities[i - step] * boundary_positions[i - step]
-                    + boundary_probabilities[i + step] * boundary_positions[i + step]
-                ) / boundary_probabilities[i]
+            indices = np.arange(2 ** (n + 1), number_of_boundaries - 1, 2 ** (n + 2))
+            if len(indices) == 0:
+                continue
+            left = indices - step
+            right = indices + step
+            boundary_probabilities[indices] = (
+                boundary_probabilities[left] + boundary_probabilities[right]
+            )
+            boundary_positions[indices] = (
+                boundary_probabilities[left] * boundary_positions[left]
+                + boundary_probabilities[right] * boundary_positions[right]
+            ) / boundary_probabilities[indices]
 
         # Above process might not produce a strictly increasing sequence of
         # positions if not a valid TTR, and it will leave 'NaN'-valued
         # boundary points if the number of Dirac deltas is not a power of 2.
         # Handle both cases by sweeping over the boundary positions.
+        # Note: this fixup must remain sequential because each corrected
+        # position feeds into the next check.
         for i in range(2, number_of_boundaries - 1, 2):
             if (
                 np.isnan(boundary_positions[i])
@@ -340,16 +382,17 @@ class PlotData:
         bin_widths[1:-1] = boundary_positions[2:-1] - boundary_positions[1:-2]
         bin_heights = np.array([np.nan] * numberOfBins)
 
-        for i in range(1, number_of_finite_dirac_deltas - 1):
-            averageHeight = finite_sorted_dirac_deltas[i].mass / (
-                bin_widths[2 * i] + bin_widths[2 * i + 1]
-            )
-            bin_heights[2 * i] = (
-                averageHeight * bin_widths[2 * i + 1] / bin_widths[2 * i]
-            )
-            bin_heights[2 * i + 1] = (
-                averageHeight * bin_widths[2 * i] / bin_widths[2 * i + 1]
-            )
+        # Vectorise internal bin height computation for Dirac deltas 1..N-2.
+        if number_of_finite_dirac_deltas > 2:
+            internal = np.arange(1, number_of_finite_dirac_deltas - 1)
+            masses = np.array([finite_sorted_dirac_deltas[i].mass for i in internal])
+            left_idx = 2 * internal
+            right_idx = left_idx + 1
+            w_left = bin_widths[left_idx]
+            w_right = bin_widths[right_idx]
+            avg_h = masses / (w_left + w_right)
+            bin_heights[left_idx] = avg_h * w_right / w_left
+            bin_heights[right_idx] = avg_h * w_left / w_right
 
         boundary_positions, bin_widths, bin_heights = PlotData._handle_extremal_bins(
             finite_sorted_dirac_deltas,
@@ -428,15 +471,10 @@ class PlotData:
             expected_dirac_delta: The expected Dirac delta in the format np.array([position, mass]).
         """
 
-        moment_sum = 0.0
-        probability_sum = 0.0
-
-        for i, (bin_width, bin_height) in enumerate(zip(bin_widths, bin_heights)):
-            probability = bin_width * bin_height
-            probability_sum += probability
-            moment_sum += (
-                probability * (boundary_positions[i + 1] + boundary_positions[i]) / 2
-            )
+        probabilities = bin_widths * bin_heights
+        probability_sum = float(np.sum(probabilities))
+        bin_centres = (boundary_positions[1:] + boundary_positions[:-1]) / 2
+        moment_sum = float(np.sum(probabilities * bin_centres))
 
         expected_dirac_delta = DiracDelta(
             moment_sum / probability_sum, mass=probability_sum
@@ -542,12 +580,15 @@ class PlotData:
             self.masses = np.array([finite_dirac_deltas[0].mass], dtype=np.float64)
             return
 
-        # Set plot resolution to (N*2) where N is machine representation
+        # Set plot resolution to (2 * N) where N is machine representation,
+        # capped at MAX_BINS.
         machine_representation = 2 ** math.floor(math.log(self.dist.UR_order, 2))
         self.plotting_resolution = int(
-            machine_representation * 2
+            min(machine_representation * 2, self.MAX_BINS)
             if self.plotting_resolution is None
-            else min((machine_representation * 2), self.plotting_resolution)
+            else min(
+                machine_representation * 2, self.plotting_resolution, self.MAX_BINS
+            )
         )
         log2_of_plotting_resolution = self.plotting_resolution.bit_length() - 1
         self.plotting_ttr_order = log2_of_plotting_resolution - 1

@@ -19,21 +19,30 @@ style = "pep440"
 [tool.poetry.group.dev.dependencies]
 wheel = "^0.46.3"
 types-toml = "^0.10.8.20240310"
-pytest = "^8.4.2"
+pytest = "^9.0.2"
 mypy = "^1.19.1"
 flake8 = "^7.3.0"
 toml = "^0.10.2"
-black = {version = "^25.11.0", python = ">=3.10"}
+black = "^26.3.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
 build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.14"
-numpy = "~2.0.2"
-matplotlib = "~3.9.4"
-Pillow = "~12.1.1"
+python = ">=3.10"
+numpy = [
+	{ version = ">=2.0.0", python = ">=3.10,<3.13" },
+	{ version = ">=2.1.0", python = ">=3.10,<3.14" },
+	{ version = ">=2.4.1", python = ">=3.11,<3.15" },
+]
+matplotlib = [
+	{ version = ">=3.9.0", python = ">=3.10,<3.13" },
+	{ version = ">=3.10.0", python = ">=3.10,<3.14" },
+	{ version = ">=3.10.5", python = ">=3.10,<3.15" },
+]
+pillow = ">=12.1.1"
+pyyaml = ">=6.0.0"
 
 [tool.poetry.scripts]
 signaloid-uxdata-toolkit = "signaloid.uxdata_toolkit:main"

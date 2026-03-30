@@ -256,6 +256,36 @@ class DistributionalValue:
             or self.pos_inf_dirac_delta.mass > 0
         )
 
+    @classmethod
+    def from_samples(cls, samples: np.ndarray | list[float]) -> "DistributionalValue":
+        """
+        Construct a DistributionalValue from an array of float samples.
+
+        Each sample becomes a Dirac delta with equal mass (1 / n_total).
+        Non-finite values (NaN, -Inf, +Inf) are included and will be
+        separated by the sort() method when the DistributionalValue is
+        processed.
+
+        Args:
+            samples: 1-D array of float samples (may contain NaN/Inf).
+
+        Returns:
+            A DistributionalValue instance.
+
+        Raises:
+            ValueError: If the samples array is empty.
+        """
+        samples = np.asarray(samples, dtype=np.float64)
+        n_total = len(samples)
+        if n_total == 0:
+            raise ValueError("samples array must not be empty.")
+
+        mass_per_sample = 1.0 / n_total
+        dirac_deltas = [DiracDelta(float(s), mass=mass_per_sample) for s in samples]
+
+        dist = cls(dirac_deltas=dirac_deltas)
+        return dist
+
     def __repr__(self) -> str:
         """Constructs the representation type for the `DistributionalValue`.
 

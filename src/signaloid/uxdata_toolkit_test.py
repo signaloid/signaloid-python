@@ -27,10 +27,8 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-
 import signaloid.uxdata_toolkit as toolkit
 from signaloid.distributional.distributional import DistributionalValue
-
 
 # ============================================================================
 # Constants
@@ -44,8 +42,6 @@ SAMPLE_UX_STRING_WITH_SPECIAL_VALUES = "nanUx0400000000000000017FF80000000000000
 # ============================================================================
 # Unit Tests: Argument Parsing
 # ============================================================================
-
-
 class TestArgumentParsing(unittest.TestCase):
     """Tests for CLI argument parsing."""
 
@@ -127,8 +123,6 @@ class TestArgumentParsing(unittest.TestCase):
 # ============================================================================
 # Unit Tests: command_plot
 # ============================================================================
-
-
 class TestCommandPlot(unittest.TestCase):
     """Tests for the plot command handler."""
 
@@ -190,8 +184,6 @@ class TestCommandPlot(unittest.TestCase):
 # ============================================================================
 # Unit Tests: command_sample
 # ============================================================================
-
-
 class TestCommandSample(unittest.TestCase):
     """Tests for the sample command handler."""
 
@@ -281,8 +273,6 @@ class TestCommandSample(unittest.TestCase):
 # ============================================================================
 # Unit Tests: main()
 # ============================================================================
-
-
 class TestMain(unittest.TestCase):
     """Tests for the main dispatch function."""
 
@@ -294,8 +284,6 @@ class TestMain(unittest.TestCase):
 # ============================================================================
 # Integration Tests
 # ============================================================================
-
-
 class TestIntegrationPlot(unittest.TestCase):
     """Integration tests for the full plot pipeline."""
 
@@ -358,6 +346,7 @@ class TestIntegrationSample(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             output = str(Path(tmp_dir) / "stats_samples.txt")
             n_samples = 100_000
+            np.random.seed(42)
             args = toolkit.parse_arguments(
                 [
                     "sample",
@@ -385,7 +374,8 @@ class TestIntegrationSample(unittest.TestCase):
 
                 self.assertLess(np.abs(np.mean(data) - dist_value.mean), threshold_mean)
                 self.assertLess(
-                    np.abs(np.std(data) - np.sqrt(dist_value.variance)), threshold_std
+                    np.abs(np.std(data) - np.sqrt(dist_value.variance)),
+                    threshold_std,
                 )
 
 

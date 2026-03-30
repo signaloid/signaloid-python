@@ -38,7 +38,6 @@ from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas i
     PlotData,
 )
 
-
 # The background color of the plot
 BG_COLOR = 0xFFFFFF
 BG_COLOR_STR = f"{BG_COLOR:06x}"

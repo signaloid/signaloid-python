@@ -23,6 +23,8 @@ import math
 from typing import Any
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+import numpy as np
 
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,
@@ -83,6 +85,9 @@ def plot(
         "ytick.right": True,
     }
 
+    if save:
+        matplotlib.use("Agg")
+
     if matplotlib_rc_params_override is not None:
         matplotlib_rcParams_update_defaults.update(matplotlib_rc_params_override)
 
@@ -115,16 +120,39 @@ def plot(
             arrowprops={"arrowstyle": "->", "facecolor": "black", "lw": 3},
         )
     else:
-        # Plot the binning.
-        plt.bar(
-            x=plot_data.positions[:-1],
-            height=plot_data.masses,
-            width=plot_data.widths,
-            align="edge",
-            edgecolor="#33A333",
+        # Plot the binning: filled step area + step outline + bin edges.
+        ax = plt.gca()
+
+        # Plot the binning: filled step area + step outline + bin edges.
+        step_patch = ax.stairs(
+            plot_data.masses,
+            plot_data.positions,
+            fill=True,
             facecolor="#33A333" + "40",
             hatch="\\",
         )
+        step_patch.set_edgecolor("#33A333")
+        step_patch.set_linewidth(0)
+
+        ax.stairs(
+            plot_data.masses,
+            plot_data.positions,
+            fill=False,
+            color="#33A333",
+            linewidth=1.0,
+        )
+
+        # Vertical lines at internal bin edges via LineCollection (faster than plt.vlines).
+        internal_edges = plot_data.positions[1:-1]
+        edge_heights = np.maximum(plot_data.masses[:-1], plot_data.masses[1:])
+        n_edges = len(internal_edges)
+        segments = np.empty((n_edges, 2, 2))
+        segments[:, 0, 0] = internal_edges
+        segments[:, 0, 1] = 0
+        segments[:, 1, 0] = internal_edges
+        segments[:, 1, 1] = edge_heights
+        lc = LineCollection(segments.tolist(), colors="#33A333", linewidths=0.5)
+        ax.add_collection(lc)
 
     # Default kwargs for plt.annotate
     annotation_default_args: dict[str, Any] = {

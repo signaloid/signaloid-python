@@ -18,9 +18,14 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+
 from __future__ import annotations
+
 import csv
+import os
 import unittest
+
+import numpy as np
 from signaloid.distributional.dirac_delta import DiracDelta
 from signaloid.distributional.distributional import DistributionalValue
 
@@ -36,8 +41,13 @@ def read_string_bytes_pairs_from_csv(
     Returns:
         pairs: list of tuples of (string_value, bytearray_value)
     """
+    __location__ = os.path.realpath(
+        os.path.join(os.getcwd(), os.path.dirname(__file__))
+    )
+    csv_filepath = os.path.join(__location__, csv_filename)
+
     pairs: list[tuple[str, bytes]] = []
-    with open(csv_filename, "r") as csvfile:
+    with open(csv_filepath, "r") as csvfile:
         reader = csv.reader(csvfile)
         for row in reader:
             if len(row) == 2:
@@ -50,7 +60,7 @@ def read_string_bytes_pairs_from_csv(
 class TestUxParsing(unittest.TestCase):
     def test_parse_ux_strings_values(
         self,
-        input_filename: str = "src/signaloid/distributional/test_ux_value_pairs.csv",
+        input_filename: str = "./test_ux_value_pairs.csv",
     ) -> None:
         """
         Test parsing Ux string values and converting them to Ux bytes
@@ -70,7 +80,7 @@ class TestUxParsing(unittest.TestCase):
 
     def test_parse_ux_bytes_values(
         self,
-        input_filename: str = "src/signaloid/distributional/test_ux_value_pairs.csv",
+        input_filename: str = "./test_ux_value_pairs.csv",
     ) -> None:
         """
         Test parsing Ux bytes and converting them to Ux strings
@@ -357,6 +367,65 @@ class TestUxParsing(unittest.TestCase):
             ]
         )
         self.assertTrue(dist.check_is_full_valid_TTR())
+
+
+class TestDistributionalValueFromSamples(unittest.TestCase):
+    """Tests for DistributionalValue.from_samples()."""
+
+    def test_basic_finite_samples(self) -> None:
+        """from_samples should produce a valid DistributionalValue."""
+        np.random.seed(42)
+        samples = np.random.normal(0, 1, 100)
+        dist = DistributionalValue.from_samples(samples)
+
+        self.assertEqual(dist.UR_order, 100)
+        self.assertIsNotNone(dist.mean)
+        self.assertFalse(dist.has_special_values)
+
+    def test_special_values_separated(self) -> None:
+        """NaN, -Inf, +Inf should be separated after sort()."""
+        samples = np.array(
+            [1.0, 2.0, 3.0, np.nan, np.nan, -np.inf, np.inf, np.inf, np.inf, 4.0]
+        )
+        dist = DistributionalValue.from_samples(samples)
+        dist.sort()
+
+        self.assertTrue(dist.has_special_values)
+        self.assertAlmostEqual(dist.nan_dirac_delta.mass, 2 / 10)
+        self.assertAlmostEqual(dist.neg_inf_dirac_delta.mass, 1 / 10)
+        self.assertAlmostEqual(dist.pos_inf_dirac_delta.mass, 3 / 10)
+
+    def test_equal_mass_dirac_deltas(self) -> None:
+        """Each sample should become a Dirac delta with mass 1/n."""
+        samples = [1.0, 2.0, 3.0, 4.0]
+        dist = DistributionalValue.from_samples(samples)
+
+        for dd in dist.dirac_deltas:
+            self.assertAlmostEqual(dd.mass, 0.25)
+
+    def test_empty_samples_raises(self) -> None:
+        """An empty array should raise ValueError."""
+        with self.assertRaises(ValueError):
+            DistributionalValue.from_samples(np.array([]))
+
+    def test_all_nan_samples(self) -> None:
+        """All-NaN samples should have nan_mass == 1 after sort."""
+        dist = DistributionalValue.from_samples(np.full(50, np.nan))
+        dist.sort()
+
+        self.assertTrue(dist.has_special_values)
+        self.assertAlmostEqual(dist.nan_dirac_delta.mass, 1.0)
+        self.assertEqual(len(dist.finite_dirac_deltas), 0)
+
+    def test_all_identical_samples(self) -> None:
+        """All-identical samples should combine to one Dirac delta."""
+        dist = DistributionalValue.from_samples(np.full(100, 3.14))
+        dist.combine_dirac_deltas()
+
+        finite = dist.finite_dirac_deltas
+        self.assertEqual(len(finite), 1)
+        self.assertAlmostEqual(finite[0].position, 3.14)
+        self.assertAlmostEqual(finite[0].mass, 1.0)
 
 
 if __name__ == "__main__":
