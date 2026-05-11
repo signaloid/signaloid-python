@@ -48,7 +48,6 @@ Requirements:
 - pip install git+https://github.com/signaloid/signaloid-python
 """
 
-from __future__ import annotations
 import argparse
 import sys
 import traceback

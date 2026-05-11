@@ -18,7 +18,7 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
-from __future__ import annotations
+
 import sys
 import math
 
@@ -61,7 +61,7 @@ class PlotData:
         cls,
         samples: np.ndarray | list[float],
         plotting_resolution: int | None = None,
-    ) -> PlotData:
+    ) -> "PlotData":
         """
         Construct a PlotData from an array of float samples.
 
@@ -600,33 +600,48 @@ class PlotData:
                 "plot_histogram_dirac_deltas: plotting_resolution must be a power of 2!"
             )
 
-        try:
-            # Create the binning such that the average of two bins surrounding a Dirac delta
-            # is the Dirac delta itself.
-            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
-                finite_dirac_deltas, 0, False
-            )
+        if self.dist.check_is_full_valid_TTR():
+            try:
+                # Create the binning such that the average of two bins surrounding a Dirac delta
+                # is the Dirac delta itself.
+                boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
+                    finite_dirac_deltas, 0, False
+                )
 
-            # Find the TTR of the created binning. This is always a valid TTR.
-            ttr = PlotData._bin_pdf_to_ttr(
-                boundary_positions, bin_widths, bin_heights, self.plotting_ttr_order
-            )
+                # Find the TTR of the created binning. This is always a valid TTR.
+                ttr = PlotData._bin_pdf_to_ttr(
+                    boundary_positions,
+                    bin_widths,
+                    bin_heights,
+                    self.plotting_ttr_order,
+                )
 
-            # Create the binning from the obtained (valid) TTR using the TTR binning method.
-            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
-                ttr, self.plotting_ttr_order, True
-            )
+                # Create the binning from the obtained (valid) TTR using the TTR binning method.
+                boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
+                    ttr, self.plotting_ttr_order, True
+                )
 
-            self.positions = boundary_positions
-            self.masses = bin_heights
-        except (ValueError, TypeError):
-            positions = np.array([dd.position for dd in finite_dirac_deltas])
-            masses = np.array([dd.mass for dd in finite_dirac_deltas])
+                self.positions = boundary_positions
+                self.masses = bin_heights
+                return
+            except (ValueError, TypeError):
+                pass
 
-            midpoints = (positions[:-1] + positions[1:]) / 2
-            left = 2 * positions[0] - midpoints[0]
-            right = 2 * positions[-1] - midpoints[-1]
-            self.positions = np.concatenate(([left], midpoints, [right]))
-
-            widths = np.diff(self.positions)
-            self.masses = masses / widths
+        # Non-TTR input (or TTR pipeline failed): use a uniform-width histogram
+        # at `plotting_resolution`. The TTR binning method assumes the input
+        # forms a valid TTR, so applying it to arbitrary Dirac deltas (e.g. raw
+        # samples) produces meaningless boundaries.
+        positions = np.array([dd.position for dd in finite_dirac_deltas])
+        masses = np.array([dd.mass for dd in finite_dirac_deltas])
+        pos_min = float(positions[0])
+        pos_max = float(positions[-1])
+        edges = np.linspace(pos_min, pos_max, self.plotting_resolution + 1)
+        hist, _ = np.histogram(positions, bins=edges, weights=masses)
+        bin_widths = edges[1:] - edges[:-1]
+        self.positions = edges
+        self.masses = np.divide(
+            hist,
+            bin_widths,
+            out=np.zeros_like(hist, dtype=np.float64),
+            where=bin_widths != 0,
+        )

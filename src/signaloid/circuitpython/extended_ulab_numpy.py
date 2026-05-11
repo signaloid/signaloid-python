@@ -261,5 +261,59 @@ class NumpyWrapper:
 
         return res
 
+    def histogram(self, a, bins, weights=None):
+        """
+        Compute the histogram of a dataset.
+
+        Mirrors the subset of ``numpy.histogram`` semantics required by
+        this project: each value is placed in the bin where
+        ``bins[i] <= v < bins[i+1]``, with the last bin closed on the
+        right (``bins[-2] <= v <= bins[-1]``). Values outside
+        ``[bins[0], bins[-1]]`` are excluded. ``bins`` must be a
+        monotonically increasing sequence of bin edges.
+
+        :param a: The input values.
+        :param bins: A monotonically increasing sequence of bin edges
+            (length ``n_bins + 1``).
+        :param weights: Optional per-element weights. If ``None``, each
+            value contributes 1.0 to its bin.
+
+        :return: A tuple ``(hist, bin_edges)`` where ``hist`` has length
+            ``n_bins`` and ``bin_edges`` is the input ``bins`` as an array.
+        """
+
+        edges = self.array(bins)
+        n_bins = len(edges) - 1
+        if n_bins < 1:
+            raise ValueError("histogram requires at least 2 bin edges")
+
+        n_values = len(a)
+        if weights is None:
+            weights = [1.0] * n_values
+
+        hist = [0.0] * n_bins
+        first_edge = edges[0]
+        last_edge = edges[-1]
+
+        for i in range(n_values):
+            v = a[i]
+            if v < first_edge or v > last_edge:
+                continue
+            # bisect_right(edges, v) - 1 gives the numpy-style bin index.
+            lo, hi = 0, n_bins + 1
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if edges[mid] <= v:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            idx = lo - 1
+            if idx == n_bins:
+                # v == edges[-1]: the last bin is closed on the right.
+                idx = n_bins - 1
+            hist[idx] += weights[i]
+
+        return self.array(hist), edges
+
 
 np = NumpyWrapper()
