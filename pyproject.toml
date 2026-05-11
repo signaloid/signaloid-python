@@ -19,7 +19,7 @@ style = "pep440"
 [tool.poetry.group.dev.dependencies]
 wheel = "^0.46.3"
 types-toml = "^0.10.8.20240310"
-pytest = "^9.0.2"
+pytest = "^9.0.3"
 mypy = "^1.19.1"
 flake8 = "^7.3.0"
 toml = "^0.10.2"
@@ -41,7 +41,7 @@ matplotlib = [
 	{ version = ">=3.10.0", python = ">=3.10,<3.14" },
 	{ version = ">=3.10.5", python = ">=3.10,<3.15" },
 ]
-pillow = ">=12.1.1"
+pillow = ">=12.2.0"
 pyyaml = ">=6.0.0"
 
 [tool.poetry.scripts]

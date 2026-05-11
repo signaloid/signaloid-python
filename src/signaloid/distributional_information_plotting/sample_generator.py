@@ -19,7 +19,6 @@
 #   DEALINGS IN THE SOFTWARE.
 
 
-from __future__ import annotations
 from signaloid.distributional.distributional import DistributionalValue
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,

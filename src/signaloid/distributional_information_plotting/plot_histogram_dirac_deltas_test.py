@@ -19,11 +19,13 @@
 #   DEALINGS IN THE SOFTWARE.
 
 
+import os
 import random
 import unittest
 
 import numpy as np
 from signaloid.distributional.dirac_delta import DiracDelta
+from signaloid.distributional.distributional import DistributionalValue
 from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import (
     PlotData,
 )
@@ -281,6 +283,65 @@ class TestPlotDataFromSamples(unittest.TestCase):
 
         result = plot(pd, path="/dev/null", save=True)
         self.assertTrue(result)
+
+
+class TestNonTTRHistogramFallback(unittest.TestCase):
+    """Covers the uniform-width histogram fallback used when
+    `is_full_valid_TTR` is False or the TTR pipeline raises."""
+
+    @staticmethod
+    def _fixture_path(name: str) -> str:
+        here = os.path.realpath(os.path.dirname(__file__))
+        return os.path.join(here, name)
+
+    def test_invalid_ttr_ux_string_falls_back_to_uniform_histogram(self) -> None:
+        """The fixture is a Ux string that is not a valid TTR; the fallback
+        should produce a uniform-width histogram with shape matching
+        plotting_resolution."""
+        with open(self._fixture_path("invalid_ttr_ux_string.dat")) as f:
+            ux_data = f.read().strip()
+        dist = DistributionalValue.parse(ux_data)
+        self.assertIsNotNone(dist)
+        assert dist is not None
+        self.assertFalse(dist.is_full_valid_TTR)
+
+        pd = PlotData(dist)
+
+        self.assertIsNotNone(pd.plotting_resolution)
+        assert pd.plotting_resolution is not None
+        self.assertEqual(len(pd.positions), pd.plotting_resolution + 1)
+        self.assertEqual(len(pd.masses), pd.plotting_resolution)
+
+        widths = pd.positions[1:] - pd.positions[:-1]
+        self.assertTrue(np.allclose(widths, widths[0]))
+
+        # Density should integrate to ~1 over the finite-mass region.
+        total_area = float(np.sum(widths * pd.masses))
+        self.assertAlmostEqual(total_area, 1.0, places=6)
+
+    def test_clustered_repeated_positions_fallback_succeeds(self) -> None:
+        """Heavy duplication / tight clusters must not crash the fallback;
+        shape and density invariants still hold."""
+        samples = np.concatenate(
+            [
+                np.full(200, 1.0),
+                np.full(200, 2.0),
+                np.full(200, 3.0),
+                np.full(50, 2.0 + 1e-12),
+                np.full(50, 2.0 - 1e-12),
+            ]
+        )
+        pd = PlotData.from_samples(samples)
+
+        self.assertIsNotNone(pd.plotting_resolution)
+        assert pd.plotting_resolution is not None
+        self.assertEqual(len(pd.positions), pd.plotting_resolution + 1)
+        self.assertEqual(len(pd.masses), pd.plotting_resolution)
+
+        widths = pd.positions[1:] - pd.positions[:-1]
+        self.assertTrue(np.allclose(widths, widths[0]))
+        total_area = float(np.sum(widths * pd.masses))
+        self.assertAlmostEqual(total_area, 1.0, places=6)
 
 
 def dirac_deltas_to_ttr(
