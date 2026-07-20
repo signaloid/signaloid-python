@@ -35,7 +35,7 @@ from signaloid.distributional.distributional import DistributionalValue
 # ============================================================================
 
 SAMPLE_UX_STRING = "-0.000000Ux040000000000000001BCB03C52D58D3CE400000020C0048D2279B8AFF701B1807E6239F600BFFFF1F7A03E82B602A7EB881EDAA6C0BFFAFF0EC92B7D6E0321FCB58BB7F440BFF763B747227C880386DDE1E09EAEC0BFF47A086FFA91B003BA2C11EF08E580BFF1FDCC06ED8E9703F77BE72797F440BFEF88C5501503BA0429DAF9A7420E80BFEB75E0A582D1610454636C25A09D40BFE7B77D572D585D0456D709533085C0BFE43A6FD58615450472E978D476CD40BFE0E4BE4A8177310489FC4176BD8E80BFDB5AB694DC2F6D049CBBFB39689F80BFD51A3EFE52F0A004AAD48A9FB27AC0BFCDF7B07C22983104B59D8153294540BFC1E9102D4ACC1304BCB0EDEE5C1900BFA7D59C0E0AD59404C0374A760BE0C03FA7D59C0E0AD5A204C0374A760BE0C03FC1E9102D4ACC0504BCB0EDEE5C1C803FCDF7B07C22983104B59D81532945403FD51A3EFE52F0A904AAD48A9FB277003FDB5AB694DC2F6D049CBBFB39689F803FE0E4BE4A8177310489FC4176BD8E803FE43A6FD586153C0472E978D476D0C03FE7B77D572D58680456D709533082403FEB75E0A582D1560454636C25A0A1003FEF88C5501503D10429DAF9A7420AC03FF1FDCC06ED8EA203F77BE72797F7E03FF47A086FFA91AE03BA2C11EF08DE603FF763B747227C810386DDE1E09EAB203FFAFF0EC92B7D710321FCB58BB7F4403FFFF1F7A03E82AE02A7EB881EDAA32040048D2279B8AFD801B1807E6239FD40"
-SAMPLE_UX_BYTES = "09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080"
+SAMPLE_UX_BINARY = "09168733bf9ad93f000100000000000000c7c72324c19ad93f01000000c7c72324c19ad93f0000000000000080"
 SAMPLE_UX_STRING_WITH_SPECIAL_VALUES = "nanUx0400000000000000017FF8000000000000000000063FF0000000000000155555555555550040080000000000001555555555555500000000000000000015555555555555007FF80000000000001555555555555500FFF000000000000015555555555555007FF00000000000001555555555555500"
 
 
@@ -110,13 +110,13 @@ class TestArgumentParsing(unittest.TestCase):
     def test_sample_zero_num_samples_rejected(self) -> None:
         with self.assertRaises(SystemExit):
             toolkit.parse_arguments(
-                ["sample", "--num-samples", "0", "--ux-data", SAMPLE_UX_BYTES]
+                ["sample", "--num-samples", "0", "--ux-data", SAMPLE_UX_BINARY]
             )
 
     def test_sample_negative_num_samples_rejected(self) -> None:
         with self.assertRaises(SystemExit):
             toolkit.parse_arguments(
-                ["sample", "--num-samples", "-5", "--ux-data", SAMPLE_UX_BYTES]
+                ["sample", "--num-samples", "-5", "--ux-data", SAMPLE_UX_BINARY]
             )
 
 
@@ -141,9 +141,9 @@ class TestCommandPlot(unittest.TestCase):
             toolkit.command_plot(args)
             self.assertTrue(Path(args.output).exists())
 
-    def test_plot_with_ux_bytes(self) -> None:
+    def test_plot_with_ux_binary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            args = self._make_plot_args(tmp_dir, ux_data=SAMPLE_UX_BYTES)
+            args = self._make_plot_args(tmp_dir, ux_data=SAMPLE_UX_BINARY)
             toolkit.command_plot(args)
             self.assertTrue(Path(args.output).exists())
 
@@ -212,10 +212,10 @@ class TestCommandSample(unittest.TestCase):
             data = np.loadtxt(args.output, delimiter=",")
             self.assertEqual(data.size, args.num_samples)
 
-    def test_sample_with_ux_bytes(self) -> None:
+    def test_sample_with_ux_binary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             args = self._make_sample_args(
-                tmp_dir, ux_data=SAMPLE_UX_BYTES, num_samples=50
+                tmp_dir, ux_data=SAMPLE_UX_BINARY, num_samples=50
             )
             toolkit.command_sample(args)
             data = np.loadtxt(args.output, delimiter=",")
@@ -299,11 +299,11 @@ class TestIntegrationPlot(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertGreater(output_path.stat().st_size, 0)
 
-    def test_plot_end_to_end_ux_bytes(self) -> None:
+    def test_plot_end_to_end_ux_binary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             output = str(Path(tmp_dir) / "e2e_bytes_plot.png")
             args = toolkit.parse_arguments(
-                ["plot", "-o", output, "--ux-data", SAMPLE_UX_BYTES]
+                ["plot", "-o", output, "--ux-data", SAMPLE_UX_BINARY]
             )
             toolkit.command_plot(args)
 

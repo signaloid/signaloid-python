@@ -75,7 +75,11 @@ class DiracDelta:
 
         :param value: The 64bit fixed-point mass to use.
         :type value: int
+        :raises ValueError: If the given mass is negative.
         """
+        if value < 0:
+            raise ValueError(f"raw_mass must be non-negative; got {value}.")
+
         self._raw_mass = value
 
         # The probability mass is a fixed-point format with FIXED_POINT_ONE
@@ -98,7 +102,11 @@ class DiracDelta:
 
         :param value: The floating-point mass to use.
         :type value: float
+        :raises ValueError: If the given mass is negative.
         """
+        if value < 0:
+            raise ValueError(f"mass must be non-negative; got {value}.")
+
         self._mass = value
 
         if np.isnan(self._mass):

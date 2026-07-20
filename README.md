@@ -1,36 +1,67 @@
-# signaloid-python
-This repository contains a set of tools for parsing and plotting Signaloid distributional data in python. The code has been tested on MacOS-14 and Ubuntu-20.04 using python 3.11.
+# Signaloid Python Library and SDK
 
-## Installation:
-You can install the latest version of `signaloid-python` package via pip:
+The Signaloid Python Library and SDK provides tools for interacting with 
+applications that utilize Signaloid's UxHw® technology for distributional 
+arithmetic. Use the library to analyze Ux Data values from the application. 
+
+
+## Requirements
+
+The Signaloid Python Library and SDK requires Python 3.10 or later. See 
+`pyproject.toml` for the full list of dependencies.
+
+## Installation
+Install `signaloid-python` package via pip (recommended):
 ```bash
-pip install git+https://github.com/signaloid/signaloid-python
+python -m pip install signaloid-python
 ```
 
-## Parse `Ux` data
-You can construct `DistributionalValue` objects by parsing `Ux` string or `Ux` bytes. You can find more details about the Signaloid `Ux` format [here](https://docs.signaloid.io/docs/hardware-api/ux-data-format/). Following is an example of parsing `Ux` strings and `Ux` bytes.
+
+Install the latest version from the GitHub repository:
+```bash
+python -m pip install git+https://github.com/signaloid/signaloid-python
+```
+
+Alternatively, clone this repository and install from source with:
+```bash
+python -m pip install .
+```
+
+## Usage
+
+
+### Parsing Ux Data
+Construct `DistributionalValue` Python objects by parsing 
+[Ux Data](https://docs.signaloid.io/docs/uxhw-api/ux-data-format/) in 
+Ux String or Ux Binary format.
 
 ```python
 from signaloid.distributional.distributional import DistributionalValue
 
-...
+# Intermediate code which writes to ux_string and ux_binary_buffer
+# ...
 
-# Parse a Ux string
-distValue = DistributionalValue.parse(ux_string)
+# Parse a Ux String
+dist_value = DistributionalValue.parse(ux_string)
 
-# Parse a Ux bytes buffer
-distValue = DistributionalValue.parse(ux_bytes_buffer)
+# Parse a Ux Binary buffer
+dist_value = DistributionalValue.parse(ux_binary_buffer)
 ```
 
-## Plot `DistributionalValue` objects
-You can use the `PlotHistogramDiracDeltas` class for plotting a distributional value as a histogram with variable bin width. We also provide a wrapper function to assist plotting. You can use the `plot` function, which you can find [here](./src/signaloid/distributional_information_plotting/plot_wrapper.py), to easily plot a distributional value like in the following example:
+### Create Distribution Plots
+Create plots to visualize distributional information by using the 
+[`plot` function](./src/signaloid/distributional_information_plotting/plot_wrapper.py) 
+with a `DistributionalValue` object containing Ux Data. The `plot` function is a 
+wrapper function for the `PlotHistogramDiracDeltas` class for plotting a 
+distributional value as a histogram with variable bin widths.
 
 ```python
 from signaloid.distributional_information_plotting.plot_wrapper import plot
 
-...
+# Intermediate code which writes to ux_string
+# ...
 
-# Create distributional value object from string
-distValue = DistributionalValue.parse(ux_string)
-plot(distValue)
+# Create distributional value object from Ux String
+dist_value = DistributionalValue.parse(ux_string)
+plot(dist_value)
 ```
