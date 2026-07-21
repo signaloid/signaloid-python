@@ -38,7 +38,7 @@ def sample_generator(ux_data: str, n_samples: int) -> np.ndarray:
     Parse a Ux-encoded string and generate samples from the resulting distribution.
 
     Args:
-        ux_data: A Ux-string or Ux-bytes encoding a distributional value.
+        ux_data: A Ux String or Ux Binary Data encoding a distributional value.
         n_samples: Number of samples to generate.
 
     Returns:

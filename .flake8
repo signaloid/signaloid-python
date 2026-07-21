@@ -2,7 +2,7 @@
 max-complexity = 10
 max-line-length = 88
 
-extend-ignore = 
+extend-ignore =
     # Let formatting take care of line length (not flake8)
     E501
     E203
@@ -12,4 +12,3 @@ per-file-ignores =
     # We should aim is to address all of these in the future
     src/signaloid/distributional_information_plotting/*: C901
     src/signaloid/distributional/*: C901
-

@@ -23,6 +23,7 @@ import math
 import sys
 import re
 import struct
+from typing import overload
 
 if sys.implementation.name != "circuitpython":
     # Use numpy for accelerated computing
@@ -57,6 +58,9 @@ STRUCT_FORMATS: dict[str, dict[str, str]] = {
         "mass": "<Q",
     },
 }
+
+# First byte of the Ux Binary Data format, used to distinguish it from the legacy format
+UX_BINARY_FORMAT_MARKER = 0xF0
 
 
 class DistributionalValue:
@@ -241,6 +245,257 @@ class DistributionalValue:
 
         return self._variance
 
+    def _positive_mass_support(self) -> tuple[np.ndarray, np.ndarray]:
+        """Positions and masses of the strictly-positive-mass Dirac deltas.
+
+        Zero-mass deltas carry no probability, so the support-shape
+        statistics ignore them: a zero-mass outlier must not widen the
+        reported range, and a zero-mass placeholder below the support
+        must not shift a quantile or CDF lookup.
+
+        Returns:
+            ``(positions, masses)`` restricted to deltas whose mass is
+            strictly greater than zero.
+        """
+        masses = self.masses
+        mask = masses > 0.0
+        return self.positions[mask], masses[mask]
+
+    @property
+    def range(self) -> float:
+        """Max finite position minus min finite position.
+
+        Returns:
+            0.0 for a single-Dirac distribution.
+            NaN when any NaN-position Dirac has positive mass.
+            +Inf when any ±Inf-position Dirac has positive mass.
+            NaN for empty / all-zero-mass distributions.
+        """
+        self.sort()
+        if self.nan_dirac_delta.mass > 0:
+            return float("nan")
+        if self.neg_inf_dirac_delta.mass > 0 or self.pos_inf_dirac_delta.mass > 0:
+            return float("inf")
+        # After the special-value early returns the only remaining
+        # deltas are finite; drop zero-mass ones so they cannot widen
+        # the reported support.
+        finite_positions, _ = self._positive_mass_support()
+        if finite_positions.size == 0:
+            return float("nan")
+        return float(finite_positions.max() - finite_positions.min())
+
+    def quantile(self, t: float) -> float:
+        """Empirical inverse CDF at ``t`` (non-interpolating step lookup).
+
+        Returns an actual support position (the smallest whose cumulative mass
+        reaches ``t``) and takes a single scalar ``t``. For an interpolating,
+        array-capable variant that can return values between support points,
+        see `inverse_cdf`.
+
+        Args:
+            t: Quantile parameter in [0, 1].
+
+        Returns:
+            Smallest position whose cumulative normalised mass is at
+            least ``t``. NaN if ``t`` is NaN or if the distribution
+            has zero total mass.
+
+        Raises:
+            ValueError: if ``t`` is outside [0, 1].
+        """
+        if np.isnan(t):
+            return float("nan")
+        if t < 0.0 or t > 1.0:
+            raise ValueError(f"quantile parameter t must be in [0, 1]; got {t}.")
+        total_mass = float(self.masses.sum())
+        if total_mass == 0.0:
+            return float("nan")
+        positions, masses = self._positive_mass_support()
+        order = np.argsort(positions)
+        sorted_positions = positions[order]
+        cumulative = np.cumsum(masses[order]) / total_mass
+        index = int(np.searchsorted(cumulative, t, side="left"))
+        index = min(index, len(sorted_positions) - 1)
+        return float(sorted_positions[index])
+
+    @property
+    def median(self) -> float:
+        """The median position — shorthand for ``quantile(0.5)``."""
+        return self.quantile(0.5)
+
+    @overload
+    def cdf(self, x: float, *, treat_as_samples: bool = False) -> float: ...
+
+    @overload
+    def cdf(self, x: np.ndarray, *, treat_as_samples: bool = False) -> np.ndarray: ...
+
+    def cdf(self, x, *, treat_as_samples: bool = False):
+        """Empirical right-continuous step-function CDF at ``x``.
+
+        Args:
+            x: Evaluation point(s); scalar or 1-D array.
+            treat_as_samples: When True, ignore masses and treat the
+                positions as equally-weighted samples, so the CDF is
+                ``(count of positions <= x) / N``; when False (default),
+                use the mass-weighted step CDF.
+
+        Returns:
+            CDF value(s) in [0, 1]; ``float`` for scalar input,
+            ``np.ndarray`` for array input. NaN for NaN inputs and
+            for empty / all-zero-mass distributions.
+        """
+        if treat_as_samples:
+            sample_positions = np.sort(np.asarray(self.positions, dtype=float))
+            if sample_positions.size == 0:
+                if np.ndim(x) == 0:
+                    return float("nan")
+                return np.full(np.shape(x), np.nan, dtype=float)
+            result = (
+                np.searchsorted(sample_positions, x, side="right")
+                / sample_positions.size
+            )
+        else:
+            total_mass = float(self.masses.sum())
+            if total_mass == 0.0:
+                if np.ndim(x) == 0:
+                    return float("nan")
+                return np.full(np.shape(x), np.nan, dtype=float)
+            positions, masses = self._positive_mass_support()
+            order = np.argsort(positions)
+            sorted_positions = positions[order]
+            cumulative = np.cumsum(masses[order]) / total_mass
+            cdf_lookup = np.concatenate(([0.0], cumulative))
+            indices = np.searchsorted(sorted_positions, x, side="right")
+            result = cdf_lookup[indices]
+        if np.ndim(x) == 0:
+            if np.isnan(x):
+                return float("nan")
+            return float(result)
+        nan_mask = np.isnan(np.asarray(x))
+        if np.any(nan_mask):
+            result = np.where(nan_mask, np.nan, result)
+        return result
+
+    @overload
+    def inverse_cdf(self, p: float, *, treat_as_samples: bool = False) -> float: ...
+
+    @overload
+    def inverse_cdf(
+        self, p: np.ndarray, *, treat_as_samples: bool = False
+    ) -> np.ndarray: ...
+
+    def inverse_cdf(self, p, *, treat_as_samples: bool = False):
+        """Interpolated inverse CDF (quantile function), array-capable.
+
+        Unlike `quantile` (a scalar, non-interpolating step lookup that always
+        returns an actual support position), this linearly interpolates the
+        support positions against their cumulative mass (weighted branch) or
+        via ``np.quantile`` over the raw positions (samples branch). The result
+        is therefore not snapped to a support point: for ``p`` between two
+        support points it can return a value strictly between them (within the
+        support range ``[min, max]``). It also accepts array ``p``.
+
+        Args:
+            p: Probability level(s) in [0, 1]; scalar or 1-D array.
+            treat_as_samples: When True, ignore masses and treat the
+                positions as equally-weighted samples (``np.quantile``);
+                when False (default), interpolate against the
+                mass-weighted cumulative distribution.
+
+        Returns:
+            Interpolated position(s); ``float`` for scalar ``p``,
+            ``np.ndarray`` for array ``p``. NaN when the distribution has
+            no positions (samples) or no positive mass (weighted).
+        """
+        if treat_as_samples:
+            sample_positions = np.asarray(self.positions, dtype=float)
+            if sample_positions.size == 0:
+                if np.ndim(p) == 0:
+                    return float("nan")
+                return np.full(np.shape(p), np.nan, dtype=float)
+            values = np.quantile(sample_positions, p)
+        else:
+            positions, masses = self._positive_mass_support()
+            if positions.size == 0:
+                if np.ndim(p) == 0:
+                    return float("nan")
+                return np.full(np.shape(p), np.nan, dtype=float)
+            order = np.argsort(positions)
+            sorted_positions = positions[order]
+            cumulative = np.cumsum(masses[order])
+            cumulative = cumulative / cumulative[-1]
+            values = np.interp(p, cumulative, sorted_positions)
+        if np.ndim(p) == 0:
+            return float(values)
+        return np.asarray(values)
+
+    def raw_moments(self, order: int) -> float:
+        """The ``order``-th raw moment ``Σ p_i · x_i^order``.
+
+        Args:
+            order: Moment order (any non-negative integer).
+
+        Returns:
+            ``order == 0`` returns 1.0 for any non-empty distribution.
+            NaN when any NaN-position Dirac has positive mass.
+            +Inf when only +Inf-position mass is present.
+            For -Inf-position mass: +Inf for even ``order``,
+            -Inf for odd ``order``.
+            For both ±Inf-position masses: +Inf for even ``order``,
+            NaN for odd ``order``.
+            NaN for empty / all-zero-mass distributions.
+        """
+        if float(self.masses.sum()) == 0.0:
+            return float("nan")
+        if order == 0:
+            return 1.0
+        self.sort()
+        if self.nan_dirac_delta.mass > 0:
+            return float("nan")
+        has_neg_inf = self.neg_inf_dirac_delta.mass > 0
+        has_pos_inf = self.pos_inf_dirac_delta.mass > 0
+        if has_neg_inf and has_pos_inf:
+            return float("inf") if order % 2 == 0 else float("nan")
+        if has_pos_inf:
+            return float("inf")
+        if has_neg_inf:
+            return float("inf") if order % 2 == 0 else float("-inf")
+        positions, masses = self._positive_mass_support()
+        total_mass = float(masses.sum())
+        if total_mass == 0.0:
+            return float("nan")
+        return float(np.sum(masses * positions**order) / total_mass)
+
+    def central_moments(self, order: int) -> float:
+        """The ``order``-th central moment ``Σ p_i · (x_i − mean)^order``.
+
+        Args:
+            order: Moment order (any non-negative integer).
+
+        Returns:
+            ``order == 0`` returns 1.0 for any non-empty distribution.
+            NaN whenever any NaN- or ±Inf-position Dirac has positive
+            mass (the mean is non-finite).
+            NaN for empty / all-zero-mass distributions.
+        """
+        if float(self.masses.sum()) == 0.0:
+            return float("nan")
+        if order == 0:
+            return 1.0
+        self.sort()
+        if (
+            self.nan_dirac_delta.mass > 0
+            or self.neg_inf_dirac_delta.mass > 0
+            or self.pos_inf_dirac_delta.mass > 0
+        ):
+            return float("nan")
+        positions, masses = self._positive_mass_support()
+        total_mass = float(masses.sum())
+        if total_mass == 0.0:
+            return float("nan")
+        mean = float(np.sum(masses * positions) / total_mass)
+        return float(np.sum(masses * (positions - mean) ** order) / total_mass)
+
     @property
     def has_special_values(self) -> bool:
         """Property that identifies if there are non-zero mass Dirac Deltas,
@@ -286,6 +541,67 @@ class DistributionalValue:
         dist = cls(dirac_deltas=dirac_deltas)
         return dist
 
+    @classmethod
+    def from_weighted_samples(
+        cls,
+        positions: list[float] | np.ndarray,
+        masses: list[float] | np.ndarray,
+    ) -> "DistributionalValue":
+        """
+        Construct a DistributionalValue from weighted samples.
+
+        Validates the inputs (non-empty, equal-length, numeric, non-negative,
+        finite and non-zero total mass), normalises the masses to sum to 1.0,
+        and builds one Dirac delta per (position, normalised-mass) pair.
+
+        Args:
+            positions: 1-D array of sample positions.
+            masses: 1-D array of (unnormalised) sample masses, one per position.
+
+        Returns:
+            A DistributionalValue instance with normalised masses.
+
+        Raises:
+            ValueError: If positions or masses are empty, have differing
+                lengths, contain non-numerical values, contain negative
+                masses, or the total mass is not finite and non-zero.
+        """
+        positions_arr = np.array(positions)
+        masses_arr = np.array(masses)
+        if len(positions_arr) == 0:
+            raise ValueError(f"positions {positions_arr} is empty")
+        if len(masses_arr) == 0:
+            raise ValueError(f"masses {masses_arr} is empty")
+        if len(positions_arr) != len(masses_arr):
+            raise ValueError(
+                f"positions {positions_arr} and masses {masses_arr} "
+                f"have differing lengths"
+            )
+        if not all(
+            isinstance(pos, (float, int, np.integer, np.floating))
+            for pos in positions_arr
+        ):
+            raise ValueError(f"{positions_arr} contain non numerical values")
+        if not all(
+            isinstance(mass, (float, int, np.integer, np.floating))
+            for mass in masses_arr
+        ):
+            raise ValueError(f"{masses_arr} contain non numerical values")
+        if np.any(masses_arr < 0.0):
+            raise ValueError(f"masses must be non-negative (got {masses_arr})")
+
+        total_mass = float(np.sum(masses_arr))
+        if not np.isfinite(total_mass) or total_mass == 0.0:
+            raise ValueError(
+                f"sum of masses must be finite and non-zero (got {total_mass})"
+            )
+        normalized = list(masses_arr / total_mass)
+        dirac_deltas = [
+            DiracDelta(position=pos, mass=float(m))
+            for pos, m in zip(positions_arr, normalized)
+        ]
+        return cls(dirac_deltas=dirac_deltas)
+
     def __repr__(self) -> str:
         """Constructs the representation type for the `DistributionalValue`.
 
@@ -316,17 +632,17 @@ class DistributionalValue:
 
     def export(self, to_str: bool = True) -> str | bytes:
         """
-        Constructs the Ux string/Ux bytes with particle value for the `DistributionalValue`.
+        Constructs the Ux String/Ux Binary Data with particle value for the `DistributionalValue`.
 
         Args:
-            to_str: Whether to export a Ux string or a Ux bytes
-                    - True: Export a Ux string
-                    - False: Export a Ux bytes
+            to_str: Whether to export a Ux String or Ux Binary Data
+                    - True: Export a Ux String
+                    - False: Export Ux Binary Data
 
         Returns:
-            The Ux string or the Ux bytes with particle value for the `DistributionalValue`.
+            The Ux String or the Ux Binary Data with particle value for the `DistributionalValue`.
 
-        Ux-string format specification:
+        Ux String format specification:
             - Particle value (double in string format)
             - "Ux"                                              (   2 chars)
             - Representation type (uint8_t)                     (   2 chars)
@@ -337,15 +653,33 @@ class DistributionalValue:
                 - Support position (float/double)               (8/16 chars)
                 - Probability mass (uint64_t)                   (  16 chars)
 
-        Ux-bytes specification:
-            - Particle value (double)                           (  8 bytes)
-            - Representation type (uint8_t)                     (  1 byte )
-            - Number of samples (uint64_t)                      (  8 bytes) (unused)
-            - Mean value of distribution (double)               (  8 bytes)
-            - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
-            - Pairs of:
-                - Support position (float/double)               (4/8 bytes)
-                - Probability mass (uint64_t)                   (  8 bytes)
+        Ux Binary specification:
+            The Ux Binary Data layout has a 3-byte marker (0xF00000) between
+            the particle value and the representation type. The legacy format
+            does not have this marker. The `export` function always produces the
+            Ux Binary layout and not the legacy. The `parse` function accepts
+            both (see `parse`).
+            For more information see https://docs.signaloid.io/docs/uxhw-api/ux-data-format/
+
+            Ux Binary Data Format:
+                - Particle value (double)                           (  8 bytes)
+                - Representation type (uint32_t)                    (  4 bytes)
+                - Number of samples (uint64_t)                      (  8 bytes) (unused)
+                - Mean value of distribution (double)               (  8 bytes)
+                - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+                - Pairs of:
+                    - Support position (float/double)               (4/8 bytes)
+                    - Probability mass (uint64_t)                   (  8 bytes)
+
+            Legacy format:
+                - Particle value (double)                           (  8 bytes)
+                - Representation type (uint8_t)                     (  1 byte )
+                - Number of samples (uint64_t)                      (  8 bytes) (unused)
+                - Mean value of distribution (double)               (  8 bytes)
+                - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+                - Pairs of:
+                    - Support position (float/double)               (4/8 bytes)
+                    - Probability mass (uint64_t)                   (  8 bytes)
         """
 
         # Create byte representation
@@ -367,6 +701,13 @@ class DistributionalValue:
             )
             fmt = STRUCT_FORMATS["bytes"]
             buffer += struct.pack(fmt["particle"], particle_value)
+
+            # Ux Binary Data format specifies:
+            # - start byte (0xF0),
+            # - followed by 2 padding bytes (0x0000).
+            # These are inserted between the particle value and the
+            # representation type.
+            buffer += bytes([UX_BINARY_FORMAT_MARKER, 0x00, 0x00])
 
         # Representation type (uint8_t)                     (1 byte)
         buffer += struct.pack(fmt["UR_type"], self.UR_type)
@@ -407,17 +748,17 @@ class DistributionalValue:
     ) -> "DistributionalValue | None":
         """
         Constructs a `DistributionalValue` after parsing an input that can be
-        a UxString or a byte array.
+        a Ux String or a byte array.
 
         Args:
-            dist: The input UxString or byte array.
+            dist: The input Ux String or byte array.
             double_precision: The floating point representation precision.
                 - true: double precision
                 - false: single precision
         Returns:
             The constructed `DistributionalValue` or None if parsing fails.
 
-        Ux-string format specification:
+        Ux String format specification:
             - Particle value (double in string format)
             - "Ux"                                              (   2 chars)
             - Representation type (uint8_t)                     (   2 chars)
@@ -428,22 +769,40 @@ class DistributionalValue:
                 - Support position (float/double)               (8/16 chars)
                 - Probability mass (uint64_t)                   (  16 chars)
 
-        Ux-bytes specification:
-            - Particle value (double)                           (  8 bytes)
-            - Representation type (uint8_t)                     (  1 byte )
-            - Number of samples (uint64_t)                      (  8 bytes) (unused)
-            - Mean value of distribution (double)               (  8 bytes)
-            - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
-            - Pairs of:
-                - Support position (float/double)               (4/8 bytes)
-                - Probability mass (uint64_t)                   (  8 bytes)
+        Ux Binary specification:
+            The Ux Binary Data layout has a 3-byte marker (0xF00000) between
+            the particle value and the representation type. The legacy format
+            does not have this marker. The `export` function always produces the
+            Ux Binary layout and not the legacy. The `parse` function accepts
+            both (see `parse`).
+            For more information see https://docs.signaloid.io/docs/uxhw-api/ux-data-format/
+
+            Ux Binary Data Format:
+                - Particle value (double)                           (  8 bytes)
+                - Representation type (uint32_t)                    (  4 bytes)
+                - Number of samples (uint64_t)                      (  8 bytes) (unused)
+                - Mean value of distribution (double)               (  8 bytes)
+                - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+                - Pairs of:
+                    - Support position (float/double)               (4/8 bytes)
+                    - Probability mass (uint64_t)                   (  8 bytes)
+
+            Legacy format:
+                - Particle value (double)                           (  8 bytes)
+                - Representation type (uint8_t)                     (  1 byte )
+                - Number of samples (uint64_t)                      (  8 bytes) (unused)
+                - Mean value of distribution (double)               (  8 bytes)
+                - Number of non-zero mass Dirac deltas (uint32_t)   (  4 bytes)
+                - Pairs of:
+                    - Support position (float/double)               (4/8 bytes)
+                    - Probability mass (uint64_t)                   (  8 bytes)
         """
 
         if not dist:
             return None
 
         # If input is a hex string without 'Ux', convert it to bytes and try to
-        # parse it as Ux-bytes
+        # parse it as Ux Binary Data
         if isinstance(dist, str) and "Ux" not in dist:
             dist = bytes.fromhex(dist)
 
@@ -457,7 +816,7 @@ class DistributionalValue:
         dist_value = DistributionalValue(double_precision=double_precision)
 
         if isinstance(dist, str):
-            # Parse Hex string
+            # Parse Ux String from string of hexadecimal characters
             fmt = STRUCT_FORMATS["str"]
 
             # Match an optional floating-point or integer number, followed by 'Ux',
@@ -488,16 +847,30 @@ class DistributionalValue:
             fmt = STRUCT_FORMATS["bytes"]
 
             buffer = dist
+
+            # Need 8 bytes for the particle value plus at least 1 more byte
+            # to detect the layout (see below).
+            if len(buffer) < 9:
+                return None
+
             dist_value.particle_value = struct.unpack(
                 fmt["particle"], buffer[offset : offset + 8]
             )[0]
             offset += 8
+
+            if buffer[offset] == UX_BINARY_FORMAT_MARKER:
+                # If offset has the Ux Binary data format marker then we are not
+                # in the legacy format. Skip the 3-byte marker (0xF00000).
+                offset += 3
         else:
             print("Error: ", type(dist))
             return None
 
-        # Check if the buffer has the minimum required length (in bytes)
-        # Minimum length = 1 (repr) + 8 (samples) + 8 (mean) + 4 (count) = 21
+        # Check if the buffer has the minimum required length (in bytes).
+        # Minimum header after the current offset = 1 (repr) + 8 (samples) +
+        # 8 (mean) + 4 (count) = 21. The offset already accounts for the
+        # particle value and, for the Ux Binary layout, the 3-byte start
+        # marker.
         min_length = offset + 21
         if len(buffer) < min_length:
             return None

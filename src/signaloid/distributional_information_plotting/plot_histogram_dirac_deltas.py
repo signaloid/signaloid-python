@@ -483,7 +483,7 @@ class PlotData:
         return expected_dirac_delta
 
     @staticmethod
-    def _bin_pdf_to_ttr(
+    def bin_pdf_to_ttr(
         boundary_positions: np.ndarray,
         bin_widths: np.ndarray,
         bin_heights: np.ndarray,
@@ -491,6 +491,11 @@ class PlotData:
     ) -> list[DiracDelta]:
         """
         Computes TTR for an input bin PDF.
+
+        For an input bin PDF with N bins, the shapes are:
+            ``len(boundary_positions) == N + 1``
+            ``len(bin_widths) == N``
+            ``len(bin_heights) == N``
 
         Args:
             boundary_positions: Positions of the bin boundaries of the input bin PDF.
@@ -545,10 +550,10 @@ class PlotData:
                 high_bin_heights = bin_heights[i - 1 :]
                 break
 
-        ttr += PlotData._bin_pdf_to_ttr(
+        ttr += PlotData.bin_pdf_to_ttr(
             low_boundary_positions, low_bin_widths, low_bin_heights, order - 1
         )
-        ttr += PlotData._bin_pdf_to_ttr(
+        ttr += PlotData.bin_pdf_to_ttr(
             high_boundary_positions, high_bin_widths, high_bin_heights, order - 1
         )
 
@@ -609,7 +614,7 @@ class PlotData:
                 )
 
                 # Find the TTR of the created binning. This is always a valid TTR.
-                ttr = PlotData._bin_pdf_to_ttr(
+                ttr = PlotData.bin_pdf_to_ttr(
                     boundary_positions,
                     bin_widths,
                     bin_heights,

@@ -18,6 +18,7 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
+import math
 import unittest
 
 from signaloid.distributional.dirac_delta import DiracDelta
@@ -70,6 +71,45 @@ class TestDiracDelta(unittest.TestCase):
         combined_position: float = (1.2 * 2.3 + 4.5 * 5.6) / combined_mass
         self.assertTrue(d3.position == combined_position)
         self.assertTrue(d3.mass == combined_mass)
+
+
+class TestDiracDeltaMassValidation(unittest.TestCase):
+    """`DiracDelta` rejects negative masses, both at construction and via
+    the `mass` / `raw_mass` setters, for the floating-point `mass` and
+    fixed-point `raw_mass` inputs alike."""
+
+    def test_rejects_negative_mass(self) -> None:
+        with self.assertRaises(ValueError):
+            DiracDelta(position=1.0, mass=-0.5)
+
+    def test_rejects_negative_raw_mass(self) -> None:
+        with self.assertRaises(ValueError):
+            DiracDelta(position=1.0, raw_mass=-1)
+
+    def test_accepts_zero_and_positive_mass(self) -> None:
+        self.assertEqual(DiracDelta(position=1.0, mass=0.0).mass, 0.0)
+        self.assertEqual(DiracDelta(position=1.0, mass=0.5).mass, 0.5)
+
+    def test_accepts_zero_and_positive_raw_mass(self) -> None:
+        self.assertEqual(DiracDelta(position=1.0, raw_mass=0).raw_mass, 0)
+        self.assertEqual(DiracDelta(position=1.0, raw_mass=10).raw_mass, 10)
+
+    def test_mass_setter_rejects_negative(self) -> None:
+        dd = DiracDelta(position=1.0, mass=0.5)
+        with self.assertRaises(ValueError):
+            dd.mass = -0.5
+        self.assertEqual(dd.mass, 0.5)
+
+    def test_raw_mass_setter_rejects_negative(self) -> None:
+        dd = DiracDelta(position=1.0, raw_mass=10)
+        with self.assertRaises(ValueError):
+            dd.raw_mass = -10
+        self.assertEqual(dd.raw_mass, 10)
+
+    def test_mass_setter_allows_nan(self) -> None:
+        dd = DiracDelta(position=float("nan"), mass=0.0)
+        dd.mass = float("nan")
+        self.assertTrue(math.isnan(dd.mass))
 
 
 if __name__ == "__main__":

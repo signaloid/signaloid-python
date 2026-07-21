@@ -201,6 +201,84 @@ class NumpyWrapper:
 
         return self.array(list(map(lambda x: x**power, arr)))
 
+    def cumsum(self, arr):
+        """Cumulative sum of a 1-D array.
+
+        ulab's numpy does not provide ``cumsum``; this mirrors
+        ``numpy.cumsum`` for the 1-D case used by this project.
+
+        :param arr: The input array.
+
+        :return: A new array of running totals, the same length as the
+                input.
+        """
+        running_total = 0.0
+        result = []
+        for value in arr:
+            running_total += value
+            result.append(running_total)
+        return self.array(result)
+
+    def searchsorted(self, sorted_array, values, side="left"):
+        """Indices where `values` keep `sorted_array` sorted if inserted.
+
+        Mirrors the subset of ``numpy.searchsorted`` this project needs:
+        `sorted_array` is an ascending 1-D array and `values` is a scalar
+        or a 1-D array. With ``side='left'`` returns the first suitable
+        index, with ``side='right'`` the last.
+
+        :param sorted_array: Ascending 1-D array to search within.
+        :param values: A scalar or a 1-D array of query values.
+        :param side: Either ``'left'`` or ``'right'``.
+
+        :return: An int for a scalar query, otherwise an int array.
+        """
+        if side not in ("left", "right"):
+            raise ValueError("side must be 'left' or 'right'.")
+
+        def index_of(value):
+            low, high = 0, len(sorted_array)
+            while low < high:
+                middle = (low + high) // 2
+                if side == "left":
+                    go_right = sorted_array[middle] < value
+                else:
+                    go_right = sorted_array[middle] <= value
+                if go_right:
+                    low = middle + 1
+                else:
+                    high = middle
+            return low
+
+        if isinstance(values, (list, self.ndarray)):
+            return self.array([index_of(value) for value in values], dtype=self.uint16)
+
+        return index_of(values)
+
+    def ndim(self, arr):
+        """The number of array dimensions; ``0`` for a scalar.
+
+        :param arr: An array or scalar.
+
+        :return: The number of dimensions.
+        """
+        if isinstance(arr, (list, self.ndarray)):
+            return getattr(arr, "ndim", 1)
+
+        return 0
+
+    def shape(self, arr):
+        """The shape tuple of an array; ``()`` for a scalar.
+
+        :param arr: An array or scalar.
+
+        :return: The shape tuple.
+        """
+        if isinstance(arr, (list, self.ndarray)):
+            return getattr(arr, "shape", (len(arr),))
+
+        return ()
+
     def average(self, arr, weights=None):
         """
         This function calculates the average of an array.
