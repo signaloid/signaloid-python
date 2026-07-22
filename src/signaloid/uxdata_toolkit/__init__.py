@@ -283,7 +283,3 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("Unknown command. Use -h for help.")
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

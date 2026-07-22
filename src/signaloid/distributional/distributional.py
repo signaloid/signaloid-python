@@ -59,6 +59,8 @@ STRUCT_FORMATS: dict[str, dict[str, str]] = {
     },
 }
 
+UR_TYPE_ATHENS = 0x04
+
 # First byte of the Ux Binary Data format, used to distinguish it from the legacy format
 UX_BINARY_FORMAT_MARKER = 0xF0
 
@@ -67,16 +69,17 @@ class DistributionalValue:
     def __init__(
         self,
         particle_value: float | None = None,
-        UR_type: int | None = None,
+        UR_type: int = UR_TYPE_ATHENS,
         dirac_deltas: list[DiracDelta] | None = None,
         double_precision: bool = True,
     ) -> None:
         self.particle_value: float | None = particle_value
-        self.UR_type: int | None = UR_type
+        self.UR_type: int = UR_type
         self._dirac_deltas: list[DiracDelta] = (
             dirac_deltas if dirac_deltas is not None else []
         )
         self.double_precision = double_precision
+
         """
         properties
         """

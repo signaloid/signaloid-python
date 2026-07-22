@@ -10,6 +10,7 @@ packages = [
 	{ include = "signaloid", from = "src" }
 ]
 
+
 [tool.poetry-dynamic-versioning]
 enable = true
 vcs = "git"
@@ -30,7 +31,7 @@ types-tabulate = "^0.9.0"
 types-PyYAML = "^6.0.0"
 
 [build-system]
-requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+requires = ["poetry-core>=1.9.1", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
 build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry.dependencies]
@@ -52,6 +53,7 @@ scipy = [
 	{ version = ">=1.14.0", python = ">=3.11" },
 ]
 
+
 [tool.poetry.extras]
 sheets = ["gspread", "google-api-python-client", "oauth2client"]
 
@@ -64,6 +66,13 @@ strict = true
 disallow_any_generics = false
 python_version = "3.10"
 exclude = '(^|/)\.venv/'
+# `signaloid` is a PEP 420 namespace package, so it has no top-level `py.typed`
+# marker. Resolve it from the source tree (via `mypy_path`) rather than as an
+# installed distribution, so `mypy -p signaloid` type-checks the sources
+# directly instead of failing on the absent namespace-level marker.
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = [
