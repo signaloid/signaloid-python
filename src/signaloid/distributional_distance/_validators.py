@@ -56,7 +56,7 @@ def _validate_wp_inputs(
     etc.), so we validate at the algorithmic boundary instead of
     duplicating the check in every uxhw wrapper.
     """
-    # `bool` is a subclass of `int` in Python; reject it explicitly so
+    # `bool` is a subclass of `int` in Python. Reject it explicitly so
     # `p=True` isn't silently treated as `p=1`.
     if isinstance(p, bool) or not isinstance(p, (int, np.integer)) or p < 1:
         raise ValueError("p must be an integer greater than or equal to 1.")

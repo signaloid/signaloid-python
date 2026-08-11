@@ -44,9 +44,9 @@ def _ks_distance(
 
     Args:
         u_positions: Sample positions for distribution u (any order).
-        u_masses: Non-negative masses for u; unnormalised/raw values allowed.
+        u_masses: Non-negative masses for u (unnormalised/raw values allowed).
         v_positions: Sample positions for distribution v (any order).
-        v_masses: Non-negative masses for v; unnormalised/raw values allowed.
+        v_masses: Non-negative masses for v (unnormalised/raw values allowed).
 
     Returns:
         KS distance in [0, 1].
@@ -59,7 +59,7 @@ def _ks_distance(
     u_weights = np.asarray(u_masses, dtype=np.float64)
     v_weights = np.asarray(v_masses, dtype=np.float64)
 
-    # KS has no `p` parameter; pass p=1 purely to satisfy the shared
+    # KS has no `p` parameter. Pass p=1 purely to satisfy the shared
     # validator (which guards against bool/<1). The validator's checks
     # on shapes, finiteness, non-negative masses, and positive totals
     # are independent of `p`.

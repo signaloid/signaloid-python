@@ -280,7 +280,7 @@ class DistributionalValue:
         if self.neg_inf_dirac_delta.mass > 0 or self.pos_inf_dirac_delta.mass > 0:
             return float("inf")
         # After the special-value early returns the only remaining
-        # deltas are finite; drop zero-mass ones so they cannot widen
+        # deltas are finite. Drop zero-mass ones so they cannot widen
         # the reported support.
         finite_positions, _ = self._positive_mass_support()
         if finite_positions.size == 0:
@@ -336,14 +336,14 @@ class DistributionalValue:
         """Empirical right-continuous step-function CDF at ``x``.
 
         Args:
-            x: Evaluation point(s); scalar or 1-D array.
+            x: Evaluation point(s). Scalar or 1-D array.
             treat_as_samples: When True, ignore masses and treat the
                 positions as equally-weighted samples, so the CDF is
-                ``(count of positions <= x) / N``; when False (default),
-                use the mass-weighted step CDF.
+                ``(count of positions <= x) / N``. When False (default),
+                uses the mass-weighted step CDF.
 
         Returns:
-            CDF value(s) in [0, 1]; ``float`` for scalar input,
+            CDF value(s) in [0, 1]. ``float`` for scalar input,
             ``np.ndarray`` for array input. NaN for NaN inputs and
             for empty / all-zero-mass distributions.
         """
@@ -399,14 +399,14 @@ class DistributionalValue:
         support range ``[min, max]``). It also accepts array ``p``.
 
         Args:
-            p: Probability level(s) in [0, 1]; scalar or 1-D array.
+            p: Probability level(s) in [0, 1]. Scalar or 1-D array.
             treat_as_samples: When True, ignore masses and treat the
-                positions as equally-weighted samples (``np.quantile``);
-                when False (default), interpolate against the
+                positions as equally-weighted samples (``np.quantile``).
+                When False (default), interpolate against the
                 mass-weighted cumulative distribution.
 
         Returns:
-            Interpolated position(s); ``float`` for scalar ``p``,
+            Interpolated position(s). ``float`` for scalar ``p``,
             ``np.ndarray`` for array ``p``. NaN when the distribution has
             no positions (samples) or no positive mass (weighted).
         """

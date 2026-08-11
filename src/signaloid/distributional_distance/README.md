@@ -5,7 +5,8 @@ Distance utilities for comparing Signaloid `DistributionalValue` instances.
 
 ## Wasserstein-p distance
 
-Compute the Wasserstein-p distance between two `DistributionalValue`s. `p` is an integer ≥ 1; `p=1` and `p=2` (the canonical cases) have ergonomic shortcuts.
+Compute the Wasserstein-p distance between two `DistributionalValue`s. `p` is an
+integer ≥ 1. `p=1` and `p=2` (the canonical cases) have ergonomic shortcuts.
 
 ```python
 import numpy as np

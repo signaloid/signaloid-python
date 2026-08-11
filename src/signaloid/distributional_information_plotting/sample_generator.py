@@ -67,8 +67,8 @@ def sample_from_distributional_value(
     For particle distributions (single Dirac delta), returns identical copies
     of the particle position. For distributions with non-finite Dirac deltas
     (NaN, -Inf, +Inf), samples are drawn from a mixture: with probability
-    equal to the total finite mass, a finite sample is drawn via inverse CDF;
-    otherwise a non-finite value is chosen based on its relative mass.
+    equal to the total finite mass, a finite sample is drawn via inverse CDF.
+    Otherwise a non-finite value is chosen based on its relative mass.
 
     Args:
         distributional_value: The parsed distributional value to sample from.

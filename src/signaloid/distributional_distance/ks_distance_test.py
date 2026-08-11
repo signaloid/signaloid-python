@@ -212,8 +212,8 @@ class TestKolmogorovSmirnovDistance(unittest.TestCase):
 
     def test_non_dv_rejected_on_either_side(self) -> None:
         """Wrapper funnels through the shared `_require_distributional_pair`
-        check; both arguments are validated. Message-format coverage
-        lives in `_validators_test.py`; here we only assert the wrapper
+        check. Both arguments are validated. Message-format coverage
+        lives in `_validators_test.py`. Here we only assert the wrapper
         raises `ValueError` mentioning the expected type."""
         good = _dv_from_weighted_samples([0.0, 1.0], [0.5, 0.5])
         for side, dist_u, dist_v in (

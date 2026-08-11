@@ -5,9 +5,16 @@ Hypothesis tests for comparing Signaloid `DistributionalValue` instances.
 
 ## Bootstrapped Kolmogorov-Smirnov test
 
-Bootstrapped KS goodness-of-fit test. Draws `bootstrap_sample_size` samples from the discrete representation, runs a one-sample KS test against the true CDF, repeats `number_of_bootstraps` times, and combines the per-bootstrap p-values with Fisher's method. Returns `(accept_hypothesis, combined_p_value)`, where the hypothesis is accepted when the combined p-value is at least `significance_level`.
+Bootstrapped KS goodness-of-fit test. Draws `bootstrap_sample_size` samples from
+the discrete representation, runs a one-sample KS test against the true CDF,
+repeats `number_of_bootstraps` times, and combines the per-bootstrap p-values
+with Fisher's method. Returns `(accept_hypothesis, combined_p_value)`, where the
+hypothesis is accepted when the combined p-value is at least
+`significance_level`.
 
-The `_wrapper` form takes two `DistributionalValue`s and uses the reference's empirical `.cdf`; the core form takes any callable CDF (e.g. an analytic `scipy.stats` CDF). Pass a seeded `rng` for reproducibility.
+The `_wrapper` form takes two `DistributionalValue`s and uses the reference's
+empirical `.cdf`. The core form takes any callable CDF (e.g. an analytic
+`scipy.stats` CDF). Pass a seeded `rng` for reproducibility.
 
 ```python
 import numpy as np
