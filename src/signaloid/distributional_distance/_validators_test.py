@@ -105,7 +105,7 @@ class TestValidateWpInputs(unittest.TestCase):
 
     def test_returns_totals_when_all_inputs_valid(self) -> None:
         """Happy path: returns the (u_total, v_total) the caller will
-        divide by; both equal to the sum of their weights."""
+        divide by. Both equal to the sum of their weights."""
         u_values, u_weights, v_values, v_weights = self._arrays()
         u_total, v_total = _validate_wp_inputs(
             u_values, u_weights, v_values, v_weights, p=1
@@ -129,7 +129,7 @@ class TestValidateWpInputs(unittest.TestCase):
 
     def test_rejects_non_1d_arrays(self) -> None:
         """2-D arrays would silently flow into the Wp kernel and produce
-        a wrong distance; rejected up-front."""
+        a wrong distance. Rejected up-front."""
         u_values, u_weights, v_values, v_weights = self._arrays()
         bad_2d = np.array([[1.0, 2.0], [3.0, 4.0]])
         for label, args in (
@@ -183,7 +183,7 @@ class TestValidateWpInputs(unittest.TestCase):
         self.assertIn("non-negative", str(ctx.exception))
 
     def test_rejects_zero_total_mass(self) -> None:
-        """All-zero weights mean the CDF can't be normalised; rejected."""
+        """All-zero weights mean the CDF can't be normalised. Rejected."""
         u_values, _, v_values, v_weights = self._arrays()
         zero_weights = np.zeros(3)
         with self.assertRaises(ValueError) as ctx:

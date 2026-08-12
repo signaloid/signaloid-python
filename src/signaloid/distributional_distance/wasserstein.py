@@ -48,17 +48,17 @@ def _wp_1d_weighted_pair(
     ``W_p(u, v)^p = ∫_0^1 |F_u^{-1}(t) - F_v^{-1}(t)|^p dt``,
     which is the canonical 1D Wasserstein-p. Note: integrating
     ``∫|F_u(x) - F_v(x)|^p dx`` along x (the CDF formula) only equals
-    W_p^p when p = 1; for p ≥ 2 that integral is the energy distance,
+    W_p^p when p = 1. For p ≥ 2 that integral is the energy distance,
     not W_p.
 
     Args:
         u_positions: Sample positions for distribution u (any order).
-        u_masses: Non-negative masses for each u position; may be
+        u_masses: Non-negative masses for each u position. May be
             unnormalised — internally divided by their sum.
         v_positions: Sample positions for distribution v (any order).
-        v_masses: Non-negative masses for each v position; may be
+        v_masses: Non-negative masses for each v position. May be
             unnormalised — internally divided by their sum.
-        p: Wasserstein order (1 or 2 are exercised; any positive
+        p: Wasserstein order (1 or 2 are exercised. Any positive
             integer works).
 
     Returns:
@@ -87,11 +87,11 @@ def _wp_1d_weighted_pair(
     u_cum[-1] = 1.0
     v_cum[-1] = 1.0
 
-    # Merged quantile breakpoints in [0, 1]; 0 prepended so the first
+    # Merged quantile breakpoints in [0, 1]. 0 prepended so the first
     # interval is covered.
     qs = np.unique(np.concatenate(([0.0], u_cum, v_cum)))
 
-    # F^{-1}(t) is constant on each interval (qs[i], qs[i+1]]; evaluate
+    # F^{-1}(t) is constant on each interval (qs[i], qs[i+1]]. Evaluate
     # at the midpoint and pick the smallest index k with cum[k] ≥ mid.
     mid_t = 0.5 * (qs[:-1] + qs[1:])
     u_idx = np.clip(np.searchsorted(u_cum, mid_t, side="left"), 0, len(u_sorted) - 1)
@@ -123,7 +123,7 @@ def wasserstein_p_distance(
     internally, so callers do not apply their own ``np.sqrt``.
 
     Masses may be `None` to request uniform weighting (matching the
-    `None`-means-uniform semantics of scipy / POT); otherwise they are
+    `None`-means-uniform semantics of scipy / POT). Otherwise they are
     treated as non-negative, possibly unnormalised masses.
 
     Args:
@@ -215,8 +215,8 @@ def wasserstein_1_distance_with_weights(
         u_values: Sorted unweighted samples from distribution A.
         v_values: Sorted positions of weighted samples from distribution B.
         v_cum_weights: Cumulative sum of the sorted weights of
-            distribution B (the natural ``np.cumsum(masses)``; no
-            leading zero is required).
+            distribution B (the natural ``np.cumsum(masses)``). No
+            leading zero is required.
         all_values: Sorted concatenation of u_values and v_values.
 
     Returns:

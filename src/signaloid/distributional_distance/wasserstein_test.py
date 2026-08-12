@@ -318,7 +318,7 @@ class TestWasserstein2UxhwWrapper(unittest.TestCase):
 
 class TestGenericWassersteinP(unittest.TestCase):
     """`wasserstein_p_uxhw_wrapper` and `normalized_wasserstein_p_uxhw_wrapper`
-    are the generic surfaces; the W1 / W2 (+ normalised) wrappers are
+    are the generic surfaces. The W1 / W2 (+ normalised) wrappers are
     thin delegates. Verify delegation parity for p in {1, 2} and that
     the generic accepts non-canonical p without crashing."""
 
@@ -547,7 +547,7 @@ class TestWrapperTypeValidation(unittest.TestCase):
         bypassed the helper in any single wrapper would be caught.
 
         Message-format coverage (which argument name appears, which type
-        name, etc.) lives in `_validators_test.py`; here we just verify
+        name, etc.) lives in `_validators_test.py`. Here we just verify
         the wrapper raises `ValueError` mentioning the expected type."""
         good = self._good_dv()
         wrappers = (

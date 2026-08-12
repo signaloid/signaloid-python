@@ -51,8 +51,8 @@ def plot(
     no_special_y: bool = False,
     save: bool = False,
     verbose: bool = False,
-    x_lim: tuple[float, float] | None = None,
-    y_lim: tuple[float, float] | None = None,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
     x_label: str | None = None,
     x_tick_label_rotation: float | None = None,
     font_size: int = 20,
@@ -67,8 +67,8 @@ def plot(
         no_special_y: Flag toggling the plotting of special values, e.g., `NaN`, `INF`, and `-INF`.
         save: Flag toggling if the plot should be saved to a file or just shown.
         verbose: Flag controlling printing verbosity.
-        x_lim: Input x-axis limits for the plot.
-        y_lim: Input y-axis limits for the plot.
+        xlim: Input x-axis limits for the plot.
+        ylim: Input y-axis limits for the plot.
         x_label: x-axis label.
         x_tick_label_rotation: Rotation of x-axis tick labels.
         font_size: Font size to use for the plot labels.
@@ -198,7 +198,7 @@ def plot(
     for i, ax in enumerate(axes):
         if i == 0:
             if len(plot_data.positions):
-                if x_lim is None:
+                if xlim is None:
                     # This prevents the plots failing if mean value is
                     # incorrect and way off the range.
                     if (
@@ -212,12 +212,12 @@ def plot(
                         min_x = min(plot_data.dist.mean, plot_data.min_range)
                         max_x = max(plot_data.dist.mean, plot_data.max_range)
                     range_spacing = 0.05 * (max_x - min_x)
-                    x_lim = (min_x - range_spacing, max_x + range_spacing)
-                ax.set_xlim(*x_lim)
+                    xlim = (min_x - range_spacing, max_x + range_spacing)
+                ax.set_xlim(*xlim)
 
-                if y_lim is None:
-                    y_lim = (0, 1.1 * plot_data.max_value)
-                ax.set_ylim(*y_lim)
+                if ylim is None:
+                    ylim = (0, 1.1 * plot_data.max_value)
+                ax.set_ylim(*ylim)
 
             ax.set_xlabel(x_label if x_label else "Distribution Support")
             ax.set_ylabel("Probability Density")

@@ -165,7 +165,7 @@ class TestBinnedWasserstein(unittest.TestCase):
         """binned_wasserstein_1_uxhw_wrapper produces a deterministic,
         small-but-strictly-positive distance between a coarse 4-point
         symmetric uxhw and a 1000-sample N(0, 1) MC ground truth. The
-        RNG is seeded; the assertion has a tight window around the
+        RNG is seeded. The assertion has a tight window around the
         precomputed result so silent numerical regressions surface."""
         rng = np.random.default_rng(seed=20260520)
         mc_sample = rng.standard_normal(DEFAULT_SAMPLE_SIZE)
@@ -180,7 +180,7 @@ class TestBinnedWasserstein(unittest.TestCase):
             binned_dist=uxhw, ground_truth_dist=ground_truth
         )
 
-        # Precomputed against the seeded RNG above; W1 is a metric so
+        # Precomputed against the seeded RNG above. W1 is a metric so
         # strictly > 0 for non-identical distributions.
         self.assertAlmostEqual(result, 0.18323214623666018, places=12)
 
@@ -369,7 +369,7 @@ class TestSampleSortingRegression(unittest.TestCase):
 
     def test_binned_uxhw_wrapper_handles_unsorted_ground_truth(self) -> None:
         """The wrapper passes ground_truth.positions/masses straight in
-        without sorting; verify that two equivalent-but-permuted
+        without sorting. Verify that two equivalent-but-permuted
         ground truths produce the same distance."""
         positions_sorted = [-2.0, -0.5, 0.5, 2.0]
         masses_sorted = [0.15, 0.35, 0.35, 0.15]
@@ -393,11 +393,11 @@ class TestSampleSortingRegression(unittest.TestCase):
         merge-sort tie-break must put the boundary first so
         `wasserstein_1_core`'s segment-counter increments before the
         step-counter. `np.argsort` is not guaranteed stable across
-        numpy versions; `np.lexsort((types, positions))` pins the order.
+        numpy versions. `np.lexsort((types, positions))` pins the order.
 
         Hand-computed: uxhw is uniform on [0, 2] (heights=0.5, widths=1
-        across boundaries [0, 1, 2]); sample is δ at x=1 (the interior
-        boundary). F_uxhw(x) = x/2 for x ∈ [0, 2]; F_sample is the unit
+        across boundaries [0, 1, 2]). Sample is δ at x=1 (the interior
+        boundary). F_uxhw(x) = x/2 for x ∈ [0, 2]. F_sample is the unit
         step at x=1. W1 = ∫_0^1 (x/2) dx + ∫_1^2 (1 − x/2) dx
         = 0.25 + 0.25 = 0.5.
         """
@@ -416,8 +416,8 @@ class TestBinnedWrapperGroundTruthValidation(unittest.TestCase):
     ground_truth would fail later with AttributeError."""
 
     def test_non_dv_rejected_on_either_side(self) -> None:
-        """Message-format coverage lives in `_validators_test.py`;
-        here we only assert the wrapper raises `ValueError` on either
+        """Message-format coverage lives in `_validators_test.py`.
+        Here we only assert the wrapper raises `ValueError` on either
         side, mentioning the expected type."""
         good = _dv_from_weighted_samples([-1.0, 0.0, 1.0], [0.2, 0.6, 0.2])
         for side, binned, gt in (
@@ -461,7 +461,7 @@ class TestBinnedWrapperSingleDiracShortCircuit(unittest.TestCase):
         """
         # Construct: 1 finite Dirac at x=1.0 plus a NaN-position Dirac
         # carrying non-zero mass. After `sort()` the special-value
-        # bucket gets populated; `positions` then includes nan/-inf/inf
+        # bucket gets populated. `positions` then includes nan/-inf/inf
         # (length 4), so the old check would not short-circuit.
         uxhw_finite_with_special = DistributionalValue(
             dirac_deltas=[
@@ -488,7 +488,7 @@ class TestBinnedUxStringWrapper(unittest.TestCase):
     """Parse paths for `binned_wasserstein_1_ux_string_wrapper`.
 
     Math coverage flows transitively through
-    `binned_wasserstein_1_uxhw_wrapper` (which has its own tests); here
+    `binned_wasserstein_1_uxhw_wrapper` (which has its own tests). Here
     we just verify that:
       - bogus ux strings surface a ValueError rather than crashing
         later (`DistributionalValue.parse` may either return None or
@@ -499,7 +499,7 @@ class TestBinnedUxStringWrapper(unittest.TestCase):
     # SAMPLE_UX_STRING is a ~32-atom Gaussian-shaped TTR also used by
     # `uxdata_toolkit_test.py:37` and `sample_generator_test.py:30`.
     # Inlined rather than imported because test modules aren't part of
-    # the package API; copying matches the convention already used in
+    # the package API. Copying matches the convention already used in
     # those two callsites.
     SAMPLE_UX_STRING = "-0.000000Ux040000000000000001BCB03C52D58D3CE400000020C0048D2279B8AFF701B1807E6239F600BFFFF1F7A03E82B602A7EB881EDAA6C0BFFAFF0EC92B7D6E0321FCB58BB7F440BFF763B747227C880386DDE1E09EAEC0BFF47A086FFA91B003BA2C11EF08E580BFF1FDCC06ED8E9703F77BE72797F440BFEF88C5501503BA0429DAF9A7420E80BFEB75E0A582D1610454636C25A09D40BFE7B77D572D585D0456D709533085C0BFE43A6FD58615450472E978D476CD40BFE0E4BE4A8177310489FC4176BD8E80BFDB5AB694DC2F6D049CBBFB39689F80BFD51A3EFE52F0A004AAD48A9FB27AC0BFCDF7B07C22983104B59D8153294540BFC1E9102D4ACC1304BCB0EDEE5C1900BFA7D59C0E0AD59404C0374A760BE0C03FA7D59C0E0AD5A204C0374A760BE0C03FC1E9102D4ACC0504BCB0EDEE5C1C803FCDF7B07C22983104B59D81532945403FD51A3EFE52F0A904AAD48A9FB277003FDB5AB694DC2F6D049CBBFB39689F803FE0E4BE4A8177310489FC4176BD8E803FE43A6FD586153C0472E978D476D0C03FE7B77D572D58680456D709533082403FEB75E0A582D1560454636C25A0A1003FEF88C5501503D10429DAF9A7420AC03FF1FDCC06ED8EA203F77BE72797F7E03FF47A086FFA91AE03BA2C11EF08DE603FF763B747227C810386DDE1E09EAB203FFAFF0EC92B7D710321FCB58BB7F4403FFFF1F7A03E82AE02A7EB881EDAA32040048D2279B8AFD801B1807E6239FD40"  # noqa: E501
 

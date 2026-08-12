@@ -75,13 +75,13 @@ class TestScalarDistance(unittest.TestCase):
         self.assertAlmostEqual(distance, 0.01, places=12)
 
     def test_zero_ground_truth_dist_returns_positive_infinity(self) -> None:
-        """Division by zero is intentional — verify +inf specifically,
+        """Division by zero is intentional. Verify +inf specifically,
         not just any inf (`-inf` would also satisfy math.isinf)."""
         distance = relative_error_uxhw_wrapper(_single_dirac(1.0), _single_dirac(0.0))
         self.assertEqual(distance, math.inf)
 
     def test_very_large_numbers(self) -> None:
-        """Relative error is scale-invariant; verify no overflow at 1e300."""
+        """Relative error is scale-invariant. Verify no overflow at 1e300."""
         distance = relative_error_uxhw_wrapper(
             _single_dirac(1.01e300), _single_dirac(1.0e300)
         )
@@ -194,8 +194,8 @@ class TestScalarDistance(unittest.TestCase):
 
 class TestSignedError(unittest.TestCase):
     """Tests for signed_error_uxhw_wrapper —
-    test_dist[0] - ground_truth_dist[0]. Preserves sign; same units as
-    inputs; well-defined for any finite inputs (no zero-division
+    test_dist[0] - ground_truth_dist[0]. Preserves sign. Same units as
+    inputs and well-defined for any finite inputs (no zero-division
     edge case)."""
 
     def test_zero_when_identical(self) -> None:
@@ -235,8 +235,8 @@ class TestSignedError(unittest.TestCase):
 
 class TestAbsoluteError(unittest.TestCase):
     """Tests for absolute_error_uxhw_wrapper —
-    |test_dist[0] - ground_truth_dist[0]|. Magnitude only; same units
-    as inputs; well-defined for any finite inputs."""
+    |test_dist[0] - ground_truth_dist[0]|. Magnitude only. Same units
+    as inputs and well-defined for any finite inputs."""
 
     def test_zero_when_identical(self) -> None:
         """absolute_error(x, x) == 0 for any x."""

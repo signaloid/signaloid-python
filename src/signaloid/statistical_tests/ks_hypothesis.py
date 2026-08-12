@@ -71,7 +71,7 @@ def bootstrapped_kolmogorov_smirnov(
             "mass to sample from."
         )
     # Zero-mass deltas (including NaN/Inf placeholders) carry no
-    # probability; sample only from the positive-mass support and require
+    # probability. Sample only from the positive-mass support and require
     # those positions to be finite so rng.choice / ks_1samp get usable
     # values instead of producing NaN probabilities or NaN p-values.
     positive_mass = masses > 0.0
@@ -234,7 +234,7 @@ if __name__ == "__main__":
         )
         detail = f"Combined p-value: {p_value}"
     else:
-        # The one-sample test takes a raw sample; use the support positions
+        # The one-sample test takes a raw sample. Use the support positions
         # of the first distribution as the observed sample.
         accept = kolmogorov_smirnov_wrapper(
             sample=dist.positions,

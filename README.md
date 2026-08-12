@@ -4,6 +4,11 @@ The Signaloid Python Library and SDK provides tools for interacting with
 applications that utilize Signaloid's UxHw® technology for distributional 
 arithmetic. Use the library to analyze Ux Data values from the application. 
 
+Also, run benchmarking of applications to compare the performance with 
+equivalent Monte Carlo methods.
+
+![signaloid-python diagram](images/signaloid-external-illustration-signaloid-python-diagram-flat-light-withCR.png#gh-light-mode-only)
+![signaloid-python diagram](images/signaloid-external-illustration-signaloid-python-diagram-flat-dark-withCR.png#gh-dark-mode-only)
 
 ## Requirements
 
@@ -29,6 +34,31 @@ python -m pip install .
 
 ## Usage
 
+### Benchmarking UxHw applications
+
+Use the `signaloid-benchmarking` command-line tool to benchmark an application
+running with UxHw against a Monte Carlo baseline. The following example
+benchmarks for UxHw Core microarchitectures Athens and Jupiter for precisions 8,
+16, and 32, for both types of correlation tracking.
+
+```bash
+python -m signaloid.benchmarking.automation \
+    --path-to-application ./my-uxhw-app \
+    --path-to-uxhw-sdk ~/project-uxhw-sdk \
+    --path-to-pin ~/pin-external-4.2 \
+    -u Athens Jupiter \
+    -s 8 16 32 \
+    -c Disabled Autocorrelation \
+    -r Mean
+```
+
+The tool needs access to the Signaloid UxHw SDK to build the applications for
+UxHw, and access to the Intel Pin tool for accurate benchmarking. Arguments
+`-u/--representation-types`, `-s/--representation-sizes`,
+`-c/--uncertainty-correlation_types`, `-r/--reporting-methods` can also be
+supplied using a YAML file with `--config <file>`.
+
+For details, see the package [README.md](src/signaloid/benchmarking/automation/README.md).
 
 ### Parsing Ux Data
 Construct `DistributionalValue` Python objects by parsing 

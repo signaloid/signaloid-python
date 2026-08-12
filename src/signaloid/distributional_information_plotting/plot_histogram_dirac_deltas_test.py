@@ -295,7 +295,7 @@ class TestNonTTRHistogramFallback(unittest.TestCase):
         return os.path.join(here, name)
 
     def test_invalid_ttr_ux_string_falls_back_to_uniform_histogram(self) -> None:
-        """The fixture is a Ux string that is not a valid TTR; the fallback
+        """The fixture is a Ux string that is not a valid TTR. The fallback
         should produce a uniform-width histogram with shape matching
         plotting_resolution."""
         with open(self._fixture_path("invalid_ttr_ux_string.dat")) as f:
@@ -320,8 +320,8 @@ class TestNonTTRHistogramFallback(unittest.TestCase):
         self.assertAlmostEqual(total_area, 1.0, places=6)
 
     def test_clustered_repeated_positions_fallback_succeeds(self) -> None:
-        """Heavy duplication / tight clusters must not crash the fallback;
-        shape and density invariants still hold."""
+        """Heavy duplication / tight clusters must not crash the fallback.
+        Shape and density invariants still hold."""
         samples = np.concatenate(
             [
                 np.full(200, 1.0),

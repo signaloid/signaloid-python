@@ -79,7 +79,7 @@ def relative_error_uxhw_wrapper(
     Returns:
         The relative error. When
         ``ground_truth_dist.positions[0] == 0`` and
-        ``test_dist.positions[0] != 0`` the result is ``+inf``; when
+        ``test_dist.positions[0] != 0`` the result is ``+inf``. When
         both are zero the result is ``NaN`` (the 0/0 indeterminate
         form). The numpy RuntimeWarning for both cases is suppressed.
 
@@ -106,8 +106,8 @@ def signed_error_uxhw_wrapper(
 ) -> float:
     """Signed error between two scalar (single-Dirac) distributions.
 
-    Computes ``test_dist[0] - ground_truth_dist[0]``. Preserves sign;
-    same units as the inputs. The function is intended for scalar
+    Computes ``test_dist[0] - ground_truth_dist[0]``. Preserves sign.
+    Same units as the inputs. The function is intended for scalar
     comparisons. Each input must hold exactly one finite Dirac delta.
     Non-scalar inputs are rejected to avoid silently using only
     ``positions[0]``.
@@ -119,7 +119,7 @@ def signed_error_uxhw_wrapper(
             compare against.
 
     Returns:
-        The signed error. Finite for any finite inputs; may be
+        The signed error. Finite for any finite inputs. May be
         positive, negative, or zero.
 
     Raises:
@@ -139,8 +139,8 @@ def absolute_error_uxhw_wrapper(
 ) -> float:
     """Absolute error between two scalar (single-Dirac) distributions.
 
-    Computes ``|test_dist[0] - ground_truth_dist[0]|``. Magnitude only;
-    same units as the inputs. The function is intended for scalar
+    Computes ``|test_dist[0] - ground_truth_dist[0]|``. Magnitude only.
+    Same units as the inputs. The function is intended for scalar
     comparisons. Each input must hold exactly one finite Dirac delta.
     Non-scalar inputs are rejected to avoid silently using only
     ``positions[0]``.
@@ -201,7 +201,7 @@ if __name__ == "__main__":
         )
 
     distance: float = METRICS[args.metric](test_dist, ground_truth_dist)
-    # signed_error can be negative; compare |distance| to tolerance so the
+    # signed_error can be negative. Compare |distance| to tolerance so the
     # SUCCESS / FAILURE semantics are the same magnitude check across all
     # three metrics. abs() is a no-op for the non-negative ones.
     within = abs(distance) <= args.tolerance

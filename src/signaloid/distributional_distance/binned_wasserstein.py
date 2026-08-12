@@ -180,10 +180,10 @@ def fill_cdf_values(
     """Evaluate the UxHw and empirical CDFs at every merged position.
 
     Fills `uxhw_cdf_vals` and `sample_cdf_vals` in place. For the UxHw
-    CDF, each `position[i]` lies within bin segment `uxhw_cdf_idx[i]`;
-    the value is linearly interpolated using the segment's slope, with
+    CDF, each `position[i]` lies within bin segment `uxhw_cdf_idx[i]`.
+    The value is linearly interpolated using the segment's slope, with
     clamps below the first / above the last boundary. For the empirical
-    CDF, each `position[i]` lies after step `sample_cdf_idx[i]`; the
+    CDF, each `position[i]` lies after step `sample_cdf_idx[i]`. The
     value is the cumulative weight at that step (left as 0.0 when the
     point precedes the first sample, courtesy of the caller's `zeros`
     initialisation of `sample_cdf_vals`).
@@ -196,7 +196,7 @@ def fill_cdf_values(
             starting at 0).
         uxhw_cdf_widths: UxHw bin widths (length N).
         sample_cdf_vals: Output — empirical CDF values. Caller must
-            pre-initialise to zeros; entries with `sample_cdf_idx[i] == 0`
+            pre-initialise to zeros. Entries with `sample_cdf_idx[i] == 0`
             are left untouched.
         sample_cdf_idx: Per-position sample step index.
         sample_cdf_heights: Empirical cumulative CDF heights.
@@ -272,7 +272,7 @@ def wasserstein_1_core(
     )
 
     # `uxhw_cdf_idx[j]` is the linear segment of the UxHw CDF that
-    # position[j] lives in; `sample_cdf_idx[j]` is the constant segment
+    # position[j] lives in. `sample_cdf_idx[j]` is the constant segment
     # of the sample empirical CDF.
     uxhw_cdf_idx = np.empty(num_points_total, dtype=np.int32)
     sample_cdf_idx = np.empty(num_points_total, dtype=np.int32)
@@ -308,7 +308,7 @@ def wasserstein_1_core(
 
     # Compute the trapezoid / triangle / rectangle segment sizes.
     # delta_left and delta_right are the relative CDF heights at the
-    # left and right of each trapezoid; left_pos / right_pos are the
+    # left and right of each trapezoid. left_pos / right_pos are the
     # corresponding x-positions. We use `sample_cdf_vals[:-1]` for
     # delta_right because the step-wise CDF is right-continuous — we
     # compare to the left (previous) CDF height.
@@ -396,7 +396,7 @@ def _validate_binned_semantics(
     # `wasserstein_1_core` assumes bin_boundaries is strictly
     # increasing and that bin_widths[i] == boundaries[i+1] - boundaries[i].
     # Non-monotonic boundaries would produce negative segment lengths
-    # and silently-wrong distances; width/boundary disagreement breaks
+    # and silently-wrong distances. width/boundary disagreement breaks
     # the CDF-merge integration.
     boundary_gaps = np.diff(bin_boundaries_arr)
     if np.any(boundary_gaps <= 0.0):
@@ -484,7 +484,7 @@ def wasserstein_1_between_distribution_and_samples(
 
     # The empirical CDF is cumulative-in-position-order, so positions
     # (and their matching weights) must be sorted by position before
-    # cumsum. Callers may pass any ordering; we sort here.
+    # cumsum. Callers may pass any ordering. Sort here.
     sample_cdf_positions: np.ndarray = np.array(sample_positions, dtype=np.float64)
     sample_cdf_weights: np.ndarray = np.array(sample_weights, dtype=np.float64)
     sample_sort_order: np.ndarray = np.argsort(sample_cdf_positions)
@@ -556,7 +556,7 @@ def binned_wasserstein_1_uxhw_wrapper(
             "Wasserstein-1."
         )
 
-    # Find the TTR of the created binning; this is always a valid TTR.
+    # Find the TTR of the created binning. This is always a valid TTR.
     ttr = PlotData.bin_pdf_to_ttr(
         boundary_positions,
         bin_widths,

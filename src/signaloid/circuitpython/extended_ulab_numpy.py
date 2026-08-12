@@ -204,7 +204,7 @@ class NumpyWrapper:
     def cumsum(self, arr):
         """Cumulative sum of a 1-D array.
 
-        ulab's numpy does not provide ``cumsum``; this mirrors
+        ulab's numpy does not provide ``cumsum``. This mirrors
         ``numpy.cumsum`` for the 1-D case used by this project.
 
         :param arr: The input array.
@@ -256,7 +256,7 @@ class NumpyWrapper:
         return index_of(values)
 
     def ndim(self, arr):
-        """The number of array dimensions; ``0`` for a scalar.
+        """The number of array dimensions. ``0`` for a scalar.
 
         :param arr: An array or scalar.
 
@@ -268,7 +268,7 @@ class NumpyWrapper:
         return 0
 
     def shape(self, arr):
-        """The shape tuple of an array; ``()`` for a scalar.
+        """The shape tuple of an array. ``()`` for a scalar.
 
         :param arr: An array or scalar.
 

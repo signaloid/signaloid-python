@@ -465,7 +465,7 @@ class TestPositiveMassSupport(unittest.TestCase):
     strictly-positive-mass Dirac deltas."""
 
     def test_drops_zero_mass_keeps_positive(self) -> None:
-        """Zero-mass deltas are dropped; positive-mass ones are kept."""
+        """Zero-mass deltas are dropped. Positive-mass ones are kept."""
         dist = DistributionalValue(
             dirac_deltas=[
                 DiracDelta(position=1.0, mass=0.4),
@@ -670,7 +670,7 @@ class TestDistributionalValueQuantile(unittest.TestCase):
         self.assertAlmostEqual(dist.quantile(0.5), 3.0, places=12)
 
     def test_quantile_rejects_out_of_range(self) -> None:
-        """t must lie in [0, 1]; values outside raise ValueError."""
+        """t must lie in [0, 1]. Values outside raise ValueError."""
         dist = DistributionalValue(dirac_deltas=[DiracDelta(position=1.0, mass=1.0)])
         with self.assertRaises(ValueError):
             dist.quantile(-0.1)
@@ -817,7 +817,7 @@ class TestDistributionalValueCdf(unittest.TestCase):
             self.assertAlmostEqual(array_result[i], dist.cdf(float(x)), places=12)
 
     def test_cdf_returns_nan_for_nan_input(self) -> None:
-        """NaN input returns NaN; array NaNs propagate per slot."""
+        """NaN input returns NaN. Array NaNs propagate per slot."""
         dist = DistributionalValue(
             dirac_deltas=[
                 DiracDelta(position=1.0, mass=0.5),
@@ -847,7 +847,7 @@ class TestDistributionalValueCdf(unittest.TestCase):
 
     def test_cdf_ignores_zero_mass_diracs(self) -> None:
         """Zero-mass Diracs — including non-finite placeholders — leave the
-        CDF unchanged; quantile/cdf do not call sort() so such placeholders
+        CDF unchanged. Quantile/cdf do not call sort() so such placeholders
         would otherwise reach searchsorted."""
         dist = DistributionalValue(
             dirac_deltas=[
@@ -1147,7 +1147,7 @@ class TestDistributionalValueCentralMoments(unittest.TestCase):
 
 class TestFromWeightedSamples(unittest.TestCase):
     def test_normalises_masses_and_round_trips_positions(self) -> None:
-        """Masses are normalised to sum to 1; positions round-trip in order."""
+        """Masses are normalised to sum to 1. Positions round-trip in order."""
         dist = DistributionalValue.from_weighted_samples(
             [0.0, 1.0, 2.0], [1.0, 2.0, 1.0]
         )
@@ -1181,7 +1181,7 @@ class TestFromWeightedSamples(unittest.TestCase):
             DistributionalValue.from_weighted_samples([0.0, 1.0], [0.0, 0.0])
 
     def test_negative_mass_raises(self) -> None:
-        # A negative mass would normalise to a negative "probability"; reject it
+        # A negative mass would normalise to a negative "probability". Reject it
         # at construction rather than build an invalid distribution.
         with self.assertRaises(ValueError):
             DistributionalValue.from_weighted_samples([1.0, 2.0], [1.0, -0.5])
@@ -1192,7 +1192,7 @@ class TestUxBinaryFormatDetection(unittest.TestCase):
 
     The Ux Binary Data format inserts a 3-byte marker (a 0xF0 start byte
     plus two 0x00 padding bytes) between the particle value and the
-    representation type. `parse` accepts both layouts; `export`/`bytes`
+    representation type. `parse` accepts both layouts. `export`/`bytes`
     always emit the correct Ux Binary Data format.
     """
 
