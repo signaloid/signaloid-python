@@ -18,7 +18,6 @@
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
 
-import os
 from enum import Enum
 from pathlib import Path
 
@@ -312,34 +311,19 @@ class TimingFormat:
     MISSING_VALUE = "?"
 
 
-def get_repo_root() -> Path:
+def get_timing_script() -> Path:
     """
-    Find the repository root.
+    Path to the bundled timing bash script.
 
-    Checks the SIGNALOID_PYTHON_DIR env var first, then walks upward from
-    this file looking for pyproject.toml.
+    Resolved relative to this package, so it works from both a source checkout
+    and an installed wheel. The script locates its own dependencies (the
+    ``signaloid`` import root and the bundled assets) from its own location, so
+    sourcing it by this path needs no environment setup.
 
     Returns:
-        The repository root directory.
-
-    Raises:
-        RuntimeError: If the repository root cannot be located.
+        The ``benchmark_timing/get-timings.sh`` file inside this package.
     """
-    env_override = os.environ.get("SIGNALOID_PYTHON_DIR")
-    if env_override:
-        p = Path(env_override).resolve()
-        if p.is_dir():
-            return p
-
-    current = Path(__file__).resolve().parent
-    while current != current.parent:
-        if (current / "pyproject.toml").exists():
-            return current
-        current = current.parent
-
-    raise RuntimeError(
-        "Could not find repository root. Set SIGNALOID_PYTHON_DIR or run from a repo checkout."
-    )
+    return Path(__file__).parent / "benchmark_timing" / "get-timings.sh"
 
 
 def get_resources_dir() -> Path:

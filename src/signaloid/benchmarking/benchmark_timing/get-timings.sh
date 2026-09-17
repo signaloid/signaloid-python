@@ -9,6 +9,11 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
+# Directory containing the `signaloid` package, for `python3 -m signaloid...`.
+# Derived from this script's own location, so it resolves to `src/` in a source
+# checkout and to site-packages in an installed wheel.
+PACKAGE_IMPORT_ROOT=$(cd -- "$SCRIPT_DIR/../../.." &>/dev/null && pwd)
+
 # ===========================================================================
 # Utility functions
 # ===========================================================================
@@ -20,6 +25,36 @@ die() {
 
 warn() {
     echo "$*" >&2
+}
+
+# Check that a command exists and reports itself as Python 3.
+# Usage: is_python3 python3
+is_python3() {
+    command -v "$1" &>/dev/null \
+        && "$1" -c 'import sys; sys.exit(0 if sys.version_info[0] == 3 else 1)' &>/dev/null
+}
+
+# Resolve the interpreter used for the `-m signaloid...` helpers below, into
+# BENCHMARKING_PYTHON. The Python tool exports it already (its own
+# sys.executable). For standalone use we try `python3` first, then a `python`
+# that is Python 3, since PEP 394 is not honoured on every platform.
+resolve_benchmarking_python() {
+    local candidate
+
+    if [[ -n "${BENCHMARKING_PYTHON:-}" ]]; then
+        is_python3 "$BENCHMARKING_PYTHON" \
+            || die "\$BENCHMARKING_PYTHON ($BENCHMARKING_PYTHON) is not a working Python 3 interpreter."
+        return
+    fi
+
+    for candidate in python3 python; do
+        if is_python3 "$candidate"; then
+            BENCHMARKING_PYTHON=$candidate
+            return
+        fi
+    done
+
+    die "No Python 3 interpreter found. Install python3, or set \$BENCHMARKING_PYTHON to one."
 }
 
 log_section() {
@@ -69,7 +104,7 @@ default_array() {
 # Python (see signaloid.benchmarking.automation.benchmarking_utils
 # `parse_timing_intermediate_stream`).
 compute_average() {
-    "${BENCHMARKING_PYTHON:-python3}" -c "values = $1; print(sum(values) / len(values))"
+    "$BENCHMARKING_PYTHON" -c "values = $1; print(sum(values) / len(values))"
 }
 
 # Scale repetitions so the total measurement time approaches $target_total,
@@ -193,14 +228,20 @@ should_skip_representation() {
     return 1
 }
 
-# Run hyperfine and return the mean time.
-# Usage: mean_time=$(run_hyperfine_mean "command to benchmark")
-run_hyperfine_mean() {
+# Return the mean wall-clock time of a command via the measure_process_time
+# Python helper. Same PYTHONPATH-prefix shape as parse_cpu_time.
+# The repetition count is scaled from a warmup run against the same
+# TIMING_* knobs run_uxhw_benchmarks uses, so both timing paths agree.
+# Usage: mean_time=$(measure_process_time "command to benchmark" [--no-shell])
+measure_process_time() {
     local cmd="$1"
     shift
-    rm -f hyperfine.json
-    hyperfine "$@" --warmup 2 --style none --export-json hyperfine.json "$cmd" >/dev/null 2>>"${LOGS_DIR:-/tmp}/hyperfine.log"
-    jq '.results[0].mean' hyperfine.json
+    PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+        "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.measure_process_time \
+        --target-total-time "$TIMING_TARGET_TOTAL_TIME" \
+        --min-repetitions "$TIMING_MIN_REPETITIONS" \
+        --max-repetitions "$TIMING_MAX_REPETITIONS" \
+        "$@" "$cmd"
 }
 
 # Extract the seconds value from a `CPU time used:` line in one or
@@ -213,8 +254,8 @@ run_hyperfine_mean() {
 #   t=$(parse_cpu_time "$LOGS_DIR/$EXEC_STDOUT")
 #   total=$(parse_cpu_time --sum "${stdout_files[@]}")
 parse_cpu_time() {
-    PYTHONPATH="$SIGNALOID_PYTHON_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
-        "${BENCHMARKING_PYTHON:-python3}" -m signaloid.benchmarking.automation.parse_cpu_time "$@"
+    PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+        "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.parse_cpu_time "$@"
 }
 
 # Read a single-value DB metric via the read_db_metrics Python helper.
@@ -222,8 +263,8 @@ parse_cpu_time() {
 # Usage: t=$(read_db_metric host-wallclock "$UXHW_DB_BASE.db")
 read_db_metric() {
     local metric=$1 db=$2
-    PYTHONPATH="$SIGNALOID_PYTHON_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
-        "${BENCHMARKING_PYTHON:-python3}" -m signaloid.benchmarking.automation.read_db_metrics \
+    PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+        "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.read_db_metrics \
         "$db" --metric "$metric"
 }
 
@@ -272,7 +313,6 @@ parse_args() {
 # ===========================================================================
 
 validate_required_vars() {
-    require_var SIGNALOID_PYTHON_DIR
     require_var PATH_TO_UXHW_SDK
     require_var APPLICATION_PATH
     require_var APPLICATION_NAME
@@ -439,20 +479,22 @@ run_uxhw_benchmarks() {
             db_timing_value=$(read_db_metric host-wallclock "$UXHW_DB_BASE.db")
             emit_sample "$UXHW_TESTCASE" "databaseTime" "$i" "$db_timing_value"
 
-            $INSTRUCTION_COUNT_COMMAND "$APPLICATION_PATH/src/$PROGRAM-$UXHW_TESTCASE" $CLA &>/dev/null
-            if [[ ! -f inscount.out ]]; then
-                die "inscount.out not found after PIN execution"
+            if [[ $PIN_ENABLED -eq 1 ]]; then
+                $INSTRUCTION_COUNT_COMMAND "$APPLICATION_PATH/src/$PROGRAM-$UXHW_TESTCASE" $CLA &>/dev/null
+                if [[ ! -f inscount.out ]]; then
+                    die "inscount.out not found after PIN execution"
+                fi
+                local uxhw_sample_path="$LOGS_DIR/inscount-$UXHW_TESTCASE-$i-$$.out"
+                mv inscount.out "$uxhw_sample_path"
+                emit_sample "$UXHW_TESTCASE" "pinDynInstCount" "$i" "$uxhw_sample_path"
             fi
-            local uxhw_sample_path="$LOGS_DIR/inscount-$UXHW_TESTCASE-$i-$$.out"
-            mv inscount.out "$uxhw_sample_path"
-            emit_sample "$UXHW_TESTCASE" "pinDynInstCount" "$i" "$uxhw_sample_path"
         done
         echo
 
         cd "$APPLICATION_PATH/src"
 
         cd_to_input_dir
-        PROCESS_E2E_TIME=$(run_hyperfine_mean "$APPLICATION_PATH/src/$PROGRAM-$UXHW_TESTCASE $CLA" --shell=none)
+        PROCESS_E2E_TIME=$(measure_process_time "$APPLICATION_PATH/src/$PROGRAM-$UXHW_TESTCASE $CLA" --no-shell)
 
         # The emulated RISC-V dynamic instruction count (dbDynInstCount, the 5th
         # field) was produced by the now-removed UxHw `sf` emulator pass; emit
@@ -642,8 +684,8 @@ run_uxhw_tracing() {
     # which consumes (deletes) the per-config baseline DBs.
     for i in "${!verify_dbs[@]}"; do
         [[ -z "${verify_dbs[$i]}" ]] && continue
-        PYTHONPATH="$SIGNALOID_PYTHON_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
-            "${BENCHMARKING_PYTHON:-python3}" -m signaloid.benchmarking.automation.compare_tracing_ux_strings \
+        PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+            "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.compare_tracing_ux_strings \
             "${verify_baseline_dbs[$i]}" "${verify_dbs[$i]}" \
             --baseline-label O0 --candidate-label O2 --config "${verify_configs[$i]}" || true
     done
@@ -656,8 +698,8 @@ run_uxhw_tracing() {
     fi
 
     # Phase 3: Merge per-config DBs into final tracing DB
-    PYTHONPATH="$SIGNALOID_PYTHON_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
-        "${BENCHMARKING_PYTHON:-python3}" -m signaloid.benchmarking.automation.merge_tracing_dbs \
+    PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+        "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.merge_tracing_dbs \
         "$TRACING_DB_ABS" "${tracing_dbs[@]}"
 
     # Cleanup temporary binaries and config files
@@ -791,9 +833,14 @@ run_native_mc_benchmarks() {
             local process_e2e_time
             process_e2e_time=$(awk -v e2e_time="$last_measured_e2e_time" -v scale="$scaling_factor" \
                 'BEGIN { printf "%.10f", e2e_time * scale }')
-            local pin_dynamic_instructions
-            pin_dynamic_instructions=$(awk -v instructions="$last_measured_instructions" -v scale="$scaling_factor" \
-                'BEGIN { printf "%.10f", instructions * scale }')
+            # An empty last_measured_instructions means PIN was off, so there
+            # is nothing to scale. Emit the `?` sentinel rather than letting
+            # awk turn the empty string into a plausible-looking 0.
+            local pin_dynamic_instructions="?"
+            if [[ -n "$last_measured_instructions" ]]; then
+                pin_dynamic_instructions=$(awk -v instructions="$last_measured_instructions" -v scale="$scaling_factor" \
+                    'BEGIN { printf "%.10f", instructions * scale }')
+            fi
 
             emit_measurement "Native-MC-$REFERENCE_PRECISION" "$result" "?" "$process_e2e_time" "?" "$pin_dynamic_instructions"
             continue
@@ -828,33 +875,40 @@ run_native_mc_benchmarks() {
         time_array+="]"
         echo
 
-        rm -f inscount.out
-
-        # Use at most 20 repetitions for dynamic instruction count.
-        local native_mc_repetition_pin=$((NATIVE_MC_REPETITION < 20 ? NATIVE_MC_REPETITION : 20))
         local native_mc_config="Native-MC-$REFERENCE_PRECISION"
         # Tracked locally so larger precisions in the same loop can
         # extrapolate from this row (Python is the source of truth for
         # the JSON field via SAMPLE lines; this average is bash-only).
-        local pin_dyn_inst_array="["
-        echo "Running dynamic instruction measurements"
-        for ((i = 1; i <= native_mc_repetition_pin; i++)); do
-            [ -t 1 ] && echo -ne "\rRepetitions ($i/$native_mc_repetition_pin)"
-            $INSTRUCTION_COUNT_COMMAND "$APPLICATION_PATH/src/$PROGRAM-native" $CLA $CLA_FOR_MULTIPLE_EXECUTIONS "$REFERENCE_PRECISION" &>/dev/null
-            if [[ ! -f inscount.out ]]; then
-                die "inscount.out not found after PIN execution"
-            fi
-            pin_dyn_inst_array+=$(sed 's/Count //' inscount.out)
-            pin_dyn_inst_array+=","
-            local native_mc_sample_path="$LOGS_DIR/inscount-native-mc-$REFERENCE_PRECISION-$i-$$.out"
-            mv inscount.out "$native_mc_sample_path"
-            emit_sample "$native_mc_config" "pinDynInstCount" "$i" "$native_mc_sample_path"
-        done
-        echo
-        pin_dyn_inst_array+="]"
+        # Stays empty when PIN is off, which suppresses the extrapolated
+        # instruction count below.
+        local pin_dyn_inst_array="[]"
+        if [[ $PIN_ENABLED -eq 1 ]]; then
+            rm -f inscount.out
+
+            # Use at most 20 repetitions for dynamic instruction count. This
+            # caps the PIN loop only, the timing loop above uses the full
+            # $NATIVE_MC_REPETITION.
+            local native_mc_repetition_pin=$((NATIVE_MC_REPETITION < 20 ? NATIVE_MC_REPETITION : 20))
+            pin_dyn_inst_array="["
+            echo "Running dynamic instruction measurements"
+            for ((i = 1; i <= native_mc_repetition_pin; i++)); do
+                [ -t 1 ] && echo -ne "\rRepetitions ($i/$native_mc_repetition_pin)"
+                $INSTRUCTION_COUNT_COMMAND "$APPLICATION_PATH/src/$PROGRAM-native" $CLA $CLA_FOR_MULTIPLE_EXECUTIONS "$REFERENCE_PRECISION" &>/dev/null
+                if [[ ! -f inscount.out ]]; then
+                    die "inscount.out not found after PIN execution"
+                fi
+                pin_dyn_inst_array+=$(sed 's/Count //' inscount.out)
+                pin_dyn_inst_array+=","
+                local native_mc_sample_path="$LOGS_DIR/inscount-native-mc-$REFERENCE_PRECISION-$i-$$.out"
+                mv inscount.out "$native_mc_sample_path"
+                emit_sample "$native_mc_config" "pinDynInstCount" "$i" "$native_mc_sample_path"
+            done
+            echo
+            pin_dyn_inst_array+="]"
+        fi
 
         local process_e2e_time
-        process_e2e_time=$(run_hyperfine_mean "$APPLICATION_PATH/src/$PROGRAM-native $CLA $CLA_FOR_MULTIPLE_EXECUTIONS $REFERENCE_PRECISION")
+        process_e2e_time=$(measure_process_time "$APPLICATION_PATH/src/$PROGRAM-native $CLA $CLA_FOR_MULTIPLE_EXECUTIONS $REFERENCE_PRECISION")
 
         # Time and PIN instruction count are both resolved by Python
         # from the SAMPLE lines emitted above. The `?` sentinels trigger
@@ -875,7 +929,14 @@ run_native_mc_benchmarks() {
         last_measured_time=$(compute_average "$time_array")
         last_measured_e2e_time=$process_e2e_time
         # B1 / B5 boundary: same reasoning as last_measured_time above.
-        last_measured_instructions=$(compute_average "$pin_dyn_inst_array")
+        # With PIN off there are no counts to average, and compute_average
+        # would divide by zero. Leave the value empty so the extrapolation
+        # block above emits the `?` sentinel instead of a fabricated count.
+        if [[ $PIN_ENABLED -eq 1 ]]; then
+            last_measured_instructions=$(compute_average "$pin_dyn_inst_array")
+        else
+            last_measured_instructions=""
+        fi
     done
 }
 
@@ -931,10 +992,11 @@ main() {
 
     [[ -f "$SCRIPT_DIR/get_timings_local.sh" ]] && source "$SCRIPT_DIR/get_timings_local.sh"
 
+    resolve_benchmarking_python
     validate_required_vars
 
     ORIG_PWD=$(pwd)
-    RESOURCES_DIR="${BENCHMARKING_RESOURCES_DIR:-$SCRIPT_DIR/../../assets/template/coreClass}"
+    RESOURCES_DIR="${BENCHMARKING_RESOURCES_DIR:-$SCRIPT_DIR/../assets/template/coreClass}"
 
     CLA_HASH=$(echo -n "$CLA" | md5sum | cut -d ' ' -f1)
 
@@ -975,20 +1037,35 @@ main() {
     INPUT_DIR="inputs"
     echo "\$INPUT_DIR is $INPUT_DIR"
 
-    # PIN_ROOT must be provided: the Python tool exports it from
-    # --path-to-pin, or set it in the environment for a standalone run.
-    # There is no built-in default (the check below fails clearly if unset).
+    # Intel PIN is optional and off by default. A run opts in implicitly by
+    # setting PIN_ROOT. The Python tool only passes it through when
+    # --measure-dynamic-instructions was given, and removes it otherwise. With
+    # PIN off we skip the dynamic instruction count entirely and emit no
+    # pinDynInstCount samples, so the `?` sentinel on the MEASUREMENT lines
+    # stays unresolved and the Python reader reports the count as missing.
     PIN_ROOT="${PIN_ROOT:-}"
-    PIN_TOOL="$PIN_ROOT/source/tools/ManualExamples/obj-intel64/inscount0.so"
-    INSTRUCTION_COUNT_COMMAND="$PIN_ROOT/pin -t $PIN_TOOL --"
+    if [[ -n "$PIN_ROOT" ]]; then
+        PIN_ENABLED=1
+        PIN_TOOL="$PIN_ROOT/source/tools/ManualExamples/obj-intel64/inscount0.so"
+        INSTRUCTION_COUNT_COMMAND="$PIN_ROOT/pin -t $PIN_TOOL --"
+    else
+        PIN_ENABLED=0
+        PIN_TOOL=""
+        INSTRUCTION_COUNT_COMMAND=""
+    fi
 
-    # Check Pin tool availability for benchmarks that need it
+    # Check Pin tool availability for benchmarks that need it. Setting PIN_ROOT
+    # is an explicit opt-in, so a missing or unbuilt kit stays fatal.
     if [[ $SKIP_UXHW -eq 0 ]] || [[ $SKIP_NATIVE_MC -eq 0 ]]; then
-        if [[ ! -x "$PIN_ROOT/pin" ]]; then
-            die "Intel Pin not found at '$PIN_ROOT/pin'. Set PIN_ROOT (or pass --path-to-pin) to a Pin kit directory containing the 'pin' binary."
-        fi
-        if [[ ! -f "$PIN_TOOL" ]]; then
-            die "Pin inscount0 tool not found at $PIN_TOOL. Build it with: make -C $PIN_ROOT/source/tools/ManualExamples obj-intel64/inscount0.so"
+        if [[ $PIN_ENABLED -eq 1 ]]; then
+            if [[ ! -x "$PIN_ROOT/pin" ]]; then
+                die "Intel Pin not found at '$PIN_ROOT/pin'. Set PIN_ROOT to a Pin kit directory containing the 'pin' binary."
+            fi
+            if [[ ! -f "$PIN_TOOL" ]]; then
+                die "Pin inscount0 tool not found at $PIN_TOOL. Build it with: make -C $PIN_ROOT/source/tools/ManualExamples obj-intel64/inscount0.so"
+            fi
+        else
+            echo "---> Skipping the dynamic instruction count. Pass --measure-dynamic-instructions with PIN_ROOT set to measure it."
         fi
     fi
 

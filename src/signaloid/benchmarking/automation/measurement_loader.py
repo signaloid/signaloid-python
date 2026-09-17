@@ -217,7 +217,10 @@ def load_measurement_data(
             if config.startswith("Native-MC"):
                 # Native-MC rows have no database time or database
                 # dynamic instruction count. Ignore those fields.
-                if None in (time, e2e_time, pin_dyn_inst_count):
+                # `pin_dyn_inst_count` is not required either: it is None on
+                # every run made without an Intel PIN kit, which is the
+                # default.
+                if None in (time, e2e_time):
                     continue
                 for variable in benchmarking_variables:
                     # Collapse internal whitespace, matching the normalization
@@ -233,15 +236,21 @@ def load_measurement_data(
                         )
                         native_mc_counter += 1
             else:
-                # UxHw path: only ingest rows with all five numeric fields.
-                # Reference and Native rows carry `?` in some columns and are
-                # intentionally skipped.
+                # Reference and Native rows are not UxHw configurations.
+                # Skip them by name. They used to be filtered out by the
+                # `pin_dyn_inst_count is None` check below, which no longer
+                # identifies them now that a PIN-less run leaves that field
+                # None on genuine UxHw rows too.
+                if config.startswith("Reference") or config.startswith("Native"):
+                    continue
+                # UxHw path: only ingest rows with all four numeric fields.
+                # `pin_dyn_inst_count` is excluded: it is None on every run
+                # made without an Intel PIN kit, which is the default.
                 if None in (
                     time,
                     db_time,
                     e2e_time,
                     db_dyn_inst_count,
-                    pin_dyn_inst_count,
                 ):
                     continue
                 for variable in benchmarking_variables:

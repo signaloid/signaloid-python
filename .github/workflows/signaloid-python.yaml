@@ -47,6 +47,24 @@ jobs:
         echo "github.event.release.tag_name:" ${{ github.event.release.tag_name }}
         echo "contains(github.event.pull_request.labels.*.name, 'ci:upload-binaries'):" ${{ contains(github.event.pull_request.labels.*.name, 'ci:upload-binaries') }}
 
+    - name: Check submodules are up to date
+      # Independent of the matrix, so run it once. The fetch below reuses the
+      # credentials actions/checkout persisted into each submodule, so this
+      # works whether the assets remote is private or public.
+      if: ${{ matrix.args.host == 'ubuntu-22.04' && matrix.python-version == '3.10' }}
+      run: |
+        git submodule foreach --quiet --recursive '
+          branch=$(git config -f "$toplevel/.gitmodules" "submodule.$name.branch" || echo HEAD)
+          git fetch --quiet origin "$branch"
+          pinned=$(git rev-parse HEAD)
+          latest=$(git rev-parse FETCH_HEAD)
+          if [ "$pinned" != "$latest" ]; then
+            echo "::error::Submodule $sm_path is behind origin/$branch. Pinned $pinned, latest $latest. Update it with: git submodule update --remote $sm_path && git add $sm_path"
+            exit 1
+          fi
+          echo "Submodule $sm_path is up to date with origin/$branch ($pinned)"
+        '
+
     - name: Set up Python
       uses: actions/setup-python@v6
       with:

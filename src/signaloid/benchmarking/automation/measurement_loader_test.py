@@ -275,6 +275,123 @@ class TestLoadMeasurementData(unittest.TestCase):
         self.assertEqual(native["End-to-End Time"], 1.5)
         self.assertEqual(native["PIN Dyn. Inst. Count"], 300.0)
 
+    def test_load_measurement_data_ingests_rows_without_pin_counts(self) -> None:
+        """A run made without Intel PIN still populates every measurement.
+
+        Intel PIN is optional and off by default, so ``pinDynInstCount`` is
+        None on every row. Those rows must still be ingested. Dropping them
+        would empty the measurement set and fail the configuration-count
+        check with a message that never mentions PIN.
+        """
+        variable = _make_variable(name="x", description="x var", cla="-S 0")
+        variable.emcc_results.equiv_mc_list = [50]
+
+        runs = [
+            {
+                TimingFormat.META_KEY_COMMAND_LINE_ARGUMENTS: "-T -S 0",
+                TimingFormat.JSON_KEY_MEASUREMENTS: [
+                    {
+                        TimingFormat.JSON_KEY_MEASUREMENT_CONFIG: ("Athens-16"),
+                        TimingFormat.JSON_KEY_MEASUREMENT_TIME: 1.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_TIME: 2.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_E2E_TIME: 3.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_DYN_INST_COUNT: (100.0),
+                        TimingFormat.JSON_KEY_MEASUREMENT_PIN_DYN_INST_COUNT: (None),
+                    },
+                ],
+            },
+            {
+                TimingFormat.META_KEY_COMMAND_LINE_ARGUMENTS: "-S 0",
+                TimingFormat.JSON_KEY_MEASUREMENTS: [
+                    {
+                        TimingFormat.JSON_KEY_MEASUREMENT_CONFIG: "Native-MC-50",
+                        TimingFormat.JSON_KEY_MEASUREMENT_TIME: 0.5,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_TIME: None,
+                        TimingFormat.JSON_KEY_MEASUREMENT_E2E_TIME: 1.5,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_DYN_INST_COUNT: (None),
+                        TimingFormat.JSON_KEY_MEASUREMENT_PIN_DYN_INST_COUNT: (None),
+                    },
+                ],
+            },
+        ]
+
+        load_measurement_data(
+            benchmarking_variables=[variable],
+            runs=runs,
+            demo_cli_args="",
+            representation_sizes=[16],
+            representation_types=[RepresentationTypes.ATHENS],
+            correlations=["Disabled"],
+        )
+
+        measurement_dict = variable.timing_measurements.measurement_dict
+        uxhw = measurement_dict["Athens-16"]
+        self.assertEqual(uxhw["In Application Time"], 1.0)
+        self.assertEqual(uxhw["Database Dyn. Inst. Count"], 100.0)
+        # Recorded as missing rather than as a plausible-looking zero.
+        self.assertIsNone(uxhw["PIN Dyn. Inst. Count"])
+
+        native = measurement_dict["Native-MC-50"]
+        self.assertEqual(native["In Application Time"], 0.5)
+        self.assertIsNone(native["PIN Dyn. Inst. Count"])
+
+    def test_load_measurement_data_skips_reference_and_native_rows(self) -> None:
+        """Reference and Native rows are not UxHw configurations.
+
+        They used to be filtered out because their PIN count was the only
+        missing field. A PIN-less run leaves that field missing on genuine
+        UxHw rows too, so they are now skipped by name instead.
+        """
+        variable = _make_variable(name="x", description="x var", cla="-S 0")
+
+        runs = [
+            {
+                TimingFormat.META_KEY_COMMAND_LINE_ARGUMENTS: "-S 0",
+                TimingFormat.JSON_KEY_MEASUREMENTS: [
+                    {
+                        TimingFormat.JSON_KEY_MEASUREMENT_CONFIG: ("Athens-16"),
+                        TimingFormat.JSON_KEY_MEASUREMENT_TIME: 1.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_TIME: 2.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_E2E_TIME: 3.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_DYN_INST_COUNT: (100.0),
+                        TimingFormat.JSON_KEY_MEASUREMENT_PIN_DYN_INST_COUNT: (None),
+                    },
+                    {
+                        TimingFormat.JSON_KEY_MEASUREMENT_CONFIG: ("Reference-50-1"),
+                        TimingFormat.JSON_KEY_MEASUREMENT_TIME: 0.5,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_TIME: 1.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_E2E_TIME: 1.5,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_DYN_INST_COUNT: (100.0),
+                        TimingFormat.JSON_KEY_MEASUREMENT_PIN_DYN_INST_COUNT: (None),
+                    },
+                    # Bare "Native-", not "Native-MC-", so it reaches the UxHw
+                    # branch and exercises the Native half of the name skip.
+                    {
+                        TimingFormat.JSON_KEY_MEASUREMENT_CONFIG: ("Native-50-1"),
+                        TimingFormat.JSON_KEY_MEASUREMENT_TIME: 0.5,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_TIME: 1.0,
+                        TimingFormat.JSON_KEY_MEASUREMENT_E2E_TIME: 1.5,
+                        TimingFormat.JSON_KEY_MEASUREMENT_DB_DYN_INST_COUNT: (100.0),
+                        TimingFormat.JSON_KEY_MEASUREMENT_PIN_DYN_INST_COUNT: (None),
+                    },
+                ],
+            },
+        ]
+
+        load_measurement_data(
+            benchmarking_variables=[variable],
+            runs=runs,
+            demo_cli_args="",
+            representation_sizes=[16],
+            representation_types=[RepresentationTypes.ATHENS],
+            correlations=["Disabled"],
+        )
+
+        measurement_dict = variable.timing_measurements.measurement_dict
+        self.assertIn("Athens-16", measurement_dict)
+        self.assertNotIn("Reference-50-1", measurement_dict)
+        self.assertNotIn("Native-50-1", measurement_dict)
+
 
 class TestLoadTimingDataToDfs(unittest.TestCase):
     """Exercise load_timing_data_to_dfs joining timings into emcc_data."""

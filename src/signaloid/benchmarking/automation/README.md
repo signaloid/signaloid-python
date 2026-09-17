@@ -18,11 +18,10 @@ third-party dependencies.
 ### System dependencies
 - gcc or g++
 - GNU Scientific Library (on Ubuntu: libgsl-dev).
-- Python (3.10+; see root-level pyproject.toml)
+- Python (3.10+, see root-level pyproject.toml)
 - GNU Make (make)
 - bash
 - lscpu
-- hyperfine
 
 C and C++ files are compiled separately and linked with `c++`. Applications that
 link against GSL need `-lgsl -lgslcblas -lm`.
@@ -34,6 +33,8 @@ virtual environment, then install the package with pip:
 python -m venv .venv
 source .venv/bin/activate
 pip install .
+# Or, to also get the optional Google Sheets upload:
+pip install ".[sheets]"
 ```
 For development, you can install in editable mode with `pip install -e .`
 instead.
@@ -87,11 +88,21 @@ See the [Signaloid documentation for more details about using GitHub repositorie
 with UxHw](https://docs.signaloid.io/docs/api/guides/builds/builds-repository/).
 
 
-### Intel PIN
+### Intel PIN (Optional)
 
-Intel PIN is necessary for the dynamic instruction count on any timing run. The
-tool uses it via command-line argument `--path-to-pin` or environment variable
-`PIN_ROOT`. A timing run fails if neither is set.
+Intel PIN adds a dynamic instruction count to a timing run. It is optional and
+off by default. The tool turns it on only when you pass
+`--measure-dynamic-instructions`. The kit location comes from the `PIN_ROOT`
+environment variable.
+
+That flag is the single switch. A run without it never uses PIN, even when
+`PIN_ROOT` is set in your shell. So you do not need to unset anything to turn
+the measurement off.
+
+Passing the flag is an explicit opt-in, so an unset `PIN_ROOT`, or a kit that
+is missing or not built, is a hard error. Without the flag a timing run still
+completes. It logs that it skipped the count and reports `pinDynInstCount` as
+missing.
 
 The dynamic instruction count (`pinDynInstCount`) is from the `inscount0` tool.
 
@@ -100,8 +111,11 @@ Basic installation instructions:
    [Pin binary-instrumentation tool downloads](https://www.intel.com/content/www/us/en/developer/articles/tool/pin-a-binary-instrumentation-tool-downloads.html)
    (validated against PIN 4.2).
 2. Extract it to a directory `<dir>` of your choice.
-3. Set parameter `--path-to-pin <dir>` (or `export PIN_ROOT=<dir>`).
-3. Build the `inscount0` counter once (the kit does not ship it prebuilt):
+3. Build the `inscount0` counter once. The kit does not ship it prebuilt.
+   ```
+   make -C <dir>/source/tools/ManualExamples obj-intel64/inscount0.so
+   ```
+4. `export PIN_ROOT=<dir>`, then run with `--measure-dynamic-instructions`.
 
 
 ### Google Sheets (Optional)
@@ -116,7 +130,9 @@ To enable it you need:
    pip install ".[sheets]"
    ```
    A plain `pip install .` does **not** pull in the Sheets stack (`gspread`,
-   `google-api-python-client`, `oauth2client`).
+   `google-api-python-client`, `oauth2client`). Passing `--write-sheets`
+   without it raises `RuntimeError` at startup (before the pipeline runs),
+   naming the modules it could not find.
 2. A Google Cloud service-account credentials JSON file, supplied via
    `--google-credentials <path>` or the `GOOGLE_APPLICATION_CREDENTIALS`
    environment variable (whichever resolves to an existing file). There is no
@@ -188,7 +204,7 @@ signaloid-benchmarking [OPTIONS]
 | Flag | Default | Description |
 |---|---|---|
 | `--path-to-uxhw-sdk` | `~/project-uxhw-sdk` | Path to the UxHw SDK. |
-| `--path-to-pin` | `None` (uses `PIN_ROOT` env) | Path to the Intel PIN kit, exported as `PIN_ROOT` for the timing script's dynamic instruction count. Omit to keep any existing `PIN_ROOT`. A timing run fails clearly if neither `--path-to-pin` nor `PIN_ROOT` is set. |
+| `--measure-dynamic-instructions` | `False` | Also measure dynamic instruction counts with Intel PIN, using the kit that `PIN_ROOT` points at. This flag is the only way to switch the measurement on, so a run without it never invokes PIN even when `PIN_ROOT` is set. Passing it without a usable `PIN_ROOT` is an error. |
 | `--demo-cli-args` | `""` | Extra command-line arguments passed to both native-MC and UxHw executions. Use this when the demo application requires additional flags (e.g., `--demo-cli-args "--asc-file inputs/blink.asc"`). |
 | `--ground-truth-size` | `1` | Number of Monte Carlo samples for ground truth generation. |
 | `--ground-truth-type` | `MonteCarlo` | Type of ground truth: `MonteCarlo` or `WeightedSamples`. |
@@ -306,12 +322,12 @@ output):
 4. **UxHw Tracing Database** — Runs the application through the UxHw tracing
    pipeline to produce UxHw distributional outputs for each representation
    type/size/correlation combination. If a tracing database already exists, the
-   script will prompt before overwriting. The tracing build uses `-O0` (so the
+   script will prompt before overwriting. The tracing build uses `-O0`, so the
    `addDistValueTrace` `file:line` directives resolve against unoptimised debug
-   info); to guard against optimisation changing the traced values, each config
-   is also built at `-O2` and its Ux strings are checked (byte-for-byte) against
-   the `-O0` ones. Any difference is reported as a warning and does not stop the
-   run. If a config's `-O2` build or run fails, that config is skipped and
+   info. Optimisation could change the traced values. To guard against that,
+   each config is also built at `-O2` and its Ux strings are checked
+   (byte-for-byte) against the `-O0` ones. Any difference is reported as a
+   warning and does not stop the run. If a config's `-O2` build or run fails, that config is skipped and
    reported as failing in an `-O2 ux-string verification FAILED` summary (the
    run still continues). Set `TRACING_VERIFY_OPTFLAGS` to compare against a
    different level.
@@ -325,8 +341,8 @@ output):
    validation.
 9. **Equivalent Monte Carlo** — Computes the true EMCC by comparing adversary MC
    distances to UxHw distances.
-10. **UxHw Timings** — Measures execution time and dynamic instruction counts
-    for each UxHw configuration.
+10. **UxHw Timings**. Measures execution time for each UxHw configuration. It
+    also measures dynamic instruction counts when Intel PIN is enabled.
 11. **Native MC Timings** — Measures execution time for native MC at each EMCC
     sample size.
 12. **Load Measurements** — Loads all measurement data from the timing file.
@@ -405,7 +421,8 @@ underlying bash scripts used by the pipeline:
   (not executed) by the Python tool with pre-set environment variables. It
   handles UxHw compilation, native MC benchmarking, UxHw tracing, and timing
   collection (the UxHw cores are compiled and timed via UxHw. The dynamic
-  instruction count comes from Intel PIN). Compilation warnings are redirected
+  instruction count comes from Intel PIN when PIN is enabled, and is left
+  unset otherwise). Compilation warnings are redirected
   to log files (`uxhw-build.log` and `native-mc-build.log` in the `logs/`
   directory). Source files are discovered recursively (excluding `build/`
   directories), and C++ files (`.cc`, `.cpp`) are automatically included when
@@ -476,6 +493,8 @@ Notes on the schema:
 - Missing numeric fields (e.g. `dbTime` on native runs) are serialised as
   `null`.
 - `dbDynInstCount` for UxHw rows is `0`.
+- `pinDynInstCount` is `null` when the run had no Intel PIN kit configured.
+  Intel PIN is optional and off by default, so this is the common case.
 - `uxhwTargetRepetitions` is the UxHw-loop target at session start. The actual
   rep count used per measurement can differ — native-MC rows use
   `NATIVE_MC_REPETITION` (dynamically computed per precision), and the UxHw

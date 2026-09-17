@@ -78,7 +78,7 @@ class Benchmark:
         self,
         path_to_application: str,
         path_to_uxhw_sdk: str = DEFAULT_UXHW_SDK_PATH,
-        path_to_pin: str | None = None,
+        measure_dynamic_instructions: bool = False,
         has_analytic_ground_truth: bool = False,
         path_to_ground_truth_file: str = "",
         ground_truth_size: int = DEFAULT_GROUND_TRUTH_SIZE,
@@ -116,7 +116,7 @@ class Benchmark:
         """
         self.path_to_application = os.path.expanduser(path_to_application)
         self.path_to_uxhw_sdk = os.path.expanduser(path_to_uxhw_sdk)
-        self.path_to_pin = os.path.expanduser(path_to_pin) if path_to_pin else None
+        self.measure_dynamic_instructions = measure_dynamic_instructions
         self.has_analytic_ground_truth = has_analytic_ground_truth
         if self.has_analytic_ground_truth:
             self.path_to_ground_truth_file = os.path.expanduser(
@@ -410,7 +410,7 @@ class Benchmark:
         # Export common timing environment variables
         self.tracing_db_path = export_timing_env(
             path_to_uxhw_sdk=self.path_to_uxhw_sdk,
-            path_to_pin=self.path_to_pin,
+            measure_dynamic_instructions=self.measure_dynamic_instructions,
             path_to_application=self.path_to_application,
             application_name=self.application_name,
             application_version=self.application_version,

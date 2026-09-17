@@ -30,7 +30,10 @@ else:
     from signaloid.circuitpython.extended_ulab_numpy import np  # type: ignore[no-redef]
 
 from signaloid.distributional.dirac_delta import DiracDelta
-from signaloid.distributional.distributional import DistributionalValue
+from signaloid.distributional.distributional import (
+    TTR_NATIVE_UR_TYPES,
+    DistributionalValue,
+)
 
 
 class PlotData:
@@ -55,6 +58,12 @@ class PlotData:
 
     # Maximum number of bins for plotting
     MAX_BINS: int = 1024
+
+    # Closest an internal bin boundary of a non-uniform binning may sit to the Dirac
+    # delta it is placed against, as a fraction of the interval between that Dirac
+    # delta and its neighbour. Only keeps the extremal bins from collapsing to zero
+    # width, so it is deliberately tiny: see `create_non_uniform_binning`.
+    MIN_INTERIOR_WEIGHT: float = 1e-6
 
     @classmethod
     def from_samples(
@@ -194,7 +203,8 @@ class PlotData:
 
         Args:
             finite_sorted_dirac_deltas: The input Dirac deltas with finite and
-                sorted positions.
+                sorted positions. At least two are required, since the extremal
+                boundaries are placed relative to an adjacent Dirac delta.
             exponent: The TTR order, i.e., the base-2 logarithm of the number of
                 Dirac deltas in the TTR. The number of bins in the output binning
                 is twice the number of Dirac deltas in the TTR.
@@ -202,9 +212,17 @@ class PlotData:
         Returns:
             (boundary_positions, boundary_probabilities): The internal boundary positions
                 and boundary probabilities that are intermediaries to get a binning.
+        Raises:
+            ValueError: When given fewer than two Dirac deltas.
         """
 
         number_of_finite_dirac_deltas = len(finite_sorted_dirac_deltas)
+        if number_of_finite_dirac_deltas < 2:
+            raise ValueError(
+                "plot_histogram_dirac_deltas: _determine_boundary_positions requires "
+                f"at least two Dirac deltas, got {number_of_finite_dirac_deltas}"
+            )
+
         number_of_boundaries = 2 * number_of_finite_dirac_deltas + 1
         boundary_positions = np.array([np.nan] * number_of_boundaries)
         boundary_probabilities = np.array([np.nan] * number_of_boundaries)
@@ -433,7 +451,7 @@ class PlotData:
 
         Args:
             finite_sorted_dirac_deltas: The input Dirac deltas with finite
-                and sorted positions.
+                and sorted positions. At least two are required.
             exponent: The TTR order, i.e., the base-2 logarithm of the number of
                 Dirac deltas in the TTR. The number of bins in the output binning
                 is twice the number of Dirac deltas in the TTR.
@@ -441,7 +459,19 @@ class PlotData:
         Returns:
             (boundary_positions, bin_widths, bin_heights): The boundary positions,
                 bin widths, and bin heights that describe the output binning.
+        Raises:
+            ValueError: When given fewer than two Dirac deltas. Both bins that
+                surround a lone Dirac delta would be bounded on the outside by a
+                boundary placed relative to a Dirac delta that does not exist, so
+                the binning has no widths. Callers plot a lone Dirac delta as a
+                Dirac delta instead, which is what `_construct_plot_data` does.
         """
+
+        if len(finite_sorted_dirac_deltas) < 2:
+            raise ValueError(
+                "plot_histogram_dirac_deltas: create_binning requires at least two "
+                f"Dirac deltas, got {len(finite_sorted_dirac_deltas)}"
+            )
 
         (
             boundary_positions,
@@ -453,6 +483,212 @@ class PlotData:
         boundary_positions, bin_widths, bin_heights = PlotData._get_binning(
             finite_sorted_dirac_deltas, boundary_positions, boundary_probabilities
         )
+
+        return (boundary_positions, bin_widths, bin_heights)
+
+    @staticmethod
+    def _cell_boundary_positions(
+        positions: np.ndarray, interior_weight: float
+    ) -> np.ndarray:
+        """
+        Places one bin boundary between each pair of adjacent Dirac deltas, at the
+        fraction `interior_weight` of the way from the left to the right Dirac delta.
+        The two extremal boundaries are mirror images of their inner neighbours
+        about the extremal Dirac deltas, which is the (d/dx) = 0 boundary condition.
+
+        Args:
+            positions: Strictly increasing Dirac delta positions. At least two are
+                required, since every boundary is placed relative to an adjacent
+                Dirac delta.
+            interior_weight: Position of an internal boundary within the interval
+                between two adjacent Dirac deltas. `0.5` places it at the midpoint.
+        Returns:
+            boundary_positions: The (N + 1) boundary positions of the N cells.
+        Raises:
+            ValueError: When given fewer than two positions.
+        """
+
+        number_of_cells = len(positions)
+        if number_of_cells < 2:
+            raise ValueError(
+                "plot_histogram_dirac_deltas: _cell_boundary_positions requires at "
+                f"least two positions, got {number_of_cells}"
+            )
+
+        boundary_positions = np.array([np.nan] * (number_of_cells + 1))
+        boundary_positions[1:-1] = (1 - interior_weight) * positions[
+            :-1
+        ] + interior_weight * positions[1:]
+        boundary_positions[0] = 2 * positions[0] - boundary_positions[1]
+        boundary_positions[-1] = 2 * positions[-1] - boundary_positions[-2]
+
+        return boundary_positions
+
+    @staticmethod
+    def _local_mean_boundary_positions(positions: np.ndarray) -> np.ndarray | None:
+        """
+        Places the bin boundaries so that every bin is centred on the Dirac delta it
+        holds, which preserves each Dirac delta's own mean and not just the mean of
+        the whole distribution. This is the property the TTR binning method has, and
+        the property `create_binning` gets from using two bins per Dirac delta.
+
+        Centring bin `i` on Dirac delta `i` means (b[i] + b[i + 1]) / 2 == p[i], so
+        the boundaries follow the recurrence b[i + 1] = 2 * p[i] - b[i]: the whole
+        binning is determined by the first boundary alone. Writing e[i] for the
+        distance p[i] - b[i], the width of bin `i` is 2 * e[i] and the recurrence is
+        e[i + 1] = g[i] - e[i], for gaps g[i] = p[i + 1] - p[i]. Each e[i] is
+        therefore affine in e[0] with an alternating sign, so requiring every
+        boundary to stay strictly between the two Dirac deltas it separates,
+        0 < e[i] < g[i], is a set of linear constraints on e[0].
+
+        Those constraints have no solution for arbitrary Dirac delta spacing, since
+        the recurrence is undamped and alternating gaps drive e[i] out of its
+        interval. Where there is a solution, this takes the midpoint of it, which is
+        the choice furthest from every constraint and so has the widest bins. The
+        constraints are solved in exact arithmetic, so a feasible interval that is
+        narrow enough can still yield boundaries that rounding pushes onto or past a
+        Dirac delta. The constructed boundaries are therefore re-checked and also
+        rejected in that case.
+
+        Args:
+            positions: Strictly increasing Dirac delta positions, at least two.
+        Returns:
+            boundary_positions: The (N + 1) boundary positions of the N Dirac deltas, or
+                `None` when no first boundary exists that solve the constraints
+                or when rounding pushes a bin boundary beyond the next Dirac delta.
+        """
+
+        gaps = positions[1:] - positions[:-1]
+
+        # Intersect the constraints 0 < e[i] < g[i] to bound e[0].
+        lowest, highest = 0.0, float(np.inf)
+        constant, sign = 0.0, 1.0
+        for gap in gaps:
+            if sign > 0:
+                lowest = max(lowest, -constant)
+                highest = min(highest, float(gap) - constant)
+            else:
+                lowest = max(lowest, constant - float(gap))
+                highest = min(highest, constant)
+            constant, sign = float(gap) - constant, -sign
+
+        if not lowest < highest:
+            return None
+
+        boundary_positions = np.array([np.nan] * (len(positions) + 1))
+        distance_to_dirac_delta = (lowest + highest) / 2
+        boundary_positions[0] = positions[0] - distance_to_dirac_delta
+        for i, position in enumerate(positions):
+            boundary_positions[i + 1] = position + distance_to_dirac_delta
+            if i + 1 < len(positions):
+                distance_to_dirac_delta = (
+                    positions[i + 1] - position - distance_to_dirac_delta
+                )
+
+        # The constraints are solved in exact arithmetic, so re-check the result
+        # rather than trust that rounding kept every bin valid and populated.
+        if not (
+            bool(np.all(boundary_positions[1:] > boundary_positions[:-1]))
+            and bool(np.all(positions > boundary_positions[:-1]))
+            and bool(np.all(positions < boundary_positions[1:]))
+        ):
+            return None
+
+        return boundary_positions
+
+    @staticmethod
+    def create_non_uniform_binning(
+        finite_sorted_dirac_deltas: list[DiracDelta],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Creates a binning with one bin per Dirac delta, where the bin holding a
+        Dirac delta carries exactly that Dirac delta's mass and the internal bin
+        boundaries lie between adjacent Dirac deltas. The bins therefore have
+        non-uniform widths that follow the spacing of the Dirac deltas, and there
+        are no empty bins between Dirac deltas, i.e., the binning reads the input
+        as a continuous distribution with no gaps in its support.
+
+        The total mass of the binning always equals that of the input. Where the
+        Dirac delta spacing allows it, every bin is also centred on the Dirac delta
+        it holds, so each Dirac delta's own mean is preserved and not merely the
+        mean of the whole distribution, which is the property the TTR binning method
+        has. That is not solvable for every spacing (see
+        `_local_mean_boundary_positions`), and where it is not, the boundaries fall
+        back to a single placement fraction shared by all of them, solved to match
+        the mean of the whole distribution. That mean is then exact, unless matching
+        it would collapse an extremal bin to zero width and the placement is
+        therefore clamped to `MIN_INTERIOR_WEIGHT`. The mean is then approximate,
+        but never further off than placing every boundary at a midpoint would leave
+        it.
+
+        Args:
+            finite_sorted_dirac_deltas: The input Dirac deltas with finite,
+                strictly increasing positions. At least two are required.
+        Returns:
+            (boundary_positions, bin_widths, bin_heights): The boundary positions,
+                bin widths, and bin heights that describe the output binning.
+        Raises:
+            ValueError: When given fewer than two Dirac deltas. A lone Dirac delta
+                has no adjacent Dirac delta to place a bin boundary against, so it
+                has no bin width. Callers plot it as a Dirac delta instead, which is
+                what `_construct_plot_data` does.
+        """
+
+        if len(finite_sorted_dirac_deltas) < 2:
+            raise ValueError(
+                "plot_histogram_dirac_deltas: create_non_uniform_binning requires "
+                f"at least two Dirac deltas, got {len(finite_sorted_dirac_deltas)}"
+            )
+
+        positions = np.array([dd.position for dd in finite_sorted_dirac_deltas])
+        masses = np.array([dd.mass for dd in finite_sorted_dirac_deltas])
+
+        # Preserving every Dirac delta's own mean also preserves the mean of the
+        # whole distribution, so prefer it wherever the spacing admits it.
+        boundary_positions = PlotData._local_mean_boundary_positions(positions)
+        if boundary_positions is not None:
+            bin_widths = boundary_positions[1:] - boundary_positions[:-1]
+            return (boundary_positions, bin_widths, masses / bin_widths)
+
+        target_mean = float(np.sum(positions * masses))
+
+        def mean_of(interior_weight: float) -> float:
+            boundaries = PlotData._cell_boundary_positions(positions, interior_weight)
+            return float(np.sum(masses * (boundaries[:-1] + boundaries[1:]) / 2))
+
+        # The mean of the binning is affine in `interior_weight`, so two
+        # evaluations determine the value that reproduces the input mean. The mean
+        # can also be independent of `interior_weight` (e.g., for two Dirac
+        # deltas, where the mirrored boundaries centre both cells on their Dirac
+        # delta for any placement), in which case any placement is mean-exact.
+        mean_at_zero = mean_of(0.0)
+        mean_at_one = mean_of(1.0)
+        if abs(mean_at_one - mean_at_zero) < 1e-15:
+            interior_weight = 0.5
+        else:
+            interior_weight = (target_mean - mean_at_zero) / (
+                mean_at_one - mean_at_zero
+            )
+
+        # Keep the placement off the ends of [0, 1], where an extremal bin would
+        # collapse to zero width: the width of an internal bin is a convex
+        # combination of the two gaps adjacent to its Dirac delta, so it stays
+        # positive throughout, but the width of an extremal bin is twice the weight
+        # times the extremal gap. The bound is only there to keep the widths
+        # positive, so it is as small as it can be: clamping is what makes the mean
+        # of the binning approximate, and a placement near an end is the correct
+        # answer for a value whose extremal Dirac deltas are much closer together
+        # than the rest, where the density really is that much higher there.
+        interior_weight = min(
+            max(interior_weight, PlotData.MIN_INTERIOR_WEIGHT),
+            1 - PlotData.MIN_INTERIOR_WEIGHT,
+        )
+
+        boundary_positions = PlotData._cell_boundary_positions(
+            positions, interior_weight
+        )
+        bin_widths = boundary_positions[1:] - boundary_positions[:-1]
+        bin_heights = masses / bin_widths
 
         return (boundary_positions, bin_widths, bin_heights)
 
@@ -605,7 +841,24 @@ class PlotData:
                 "plot_histogram_dirac_deltas: plotting_resolution must be a power of 2!"
             )
 
-        if self.dist.check_is_full_valid_TTR():
+        # Athens / Atlas values come off a TTR core, so bin them by the TTR
+        # route regardless of what `check_is_full_valid_TTR` reports. That check
+        # fails for reasons that say nothing about whether the value is
+        # TTR-shaped — `drop_zero_mass_positions` and `cure` leave a
+        # non-power-of-2 Dirac count, or the reconstructed boundaries tie rather
+        # than strictly increase — and demoting those values to the non-uniform
+        # binning measures them against a support model their core never used.
+        # The route is safe on an invalid TTR because `bin_pdf_to_ttr` below
+        # projects whatever it is handed onto a valid TTR before the TTR binning
+        # method sees it; the `except` still catches the cases it cannot.
+        # Jupiter's Dirac deltas are particles, not a TTR, so it keeps the
+        # valid-TTR gate and otherwise falls through to the non-uniform binning.
+        use_ttr_route = (
+            self.dist.UR_type in TTR_NATIVE_UR_TYPES
+            or self.dist.check_is_full_valid_TTR()
+        )
+
+        if use_ttr_route:
             try:
                 # Create the binning such that the average of two bins surrounding a Dirac delta
                 # is the Dirac delta itself.
@@ -632,21 +885,34 @@ class PlotData:
             except (ValueError, TypeError):
                 pass
 
-        # Non-TTR input (or TTR pipeline failed): use a uniform-width histogram
-        # at `plotting_resolution`. The TTR binning method assumes the input
-        # forms a valid TTR, so applying it to arbitrary Dirac deltas (e.g. raw
-        # samples) produces meaningless boundaries.
-        positions = np.array([dd.position for dd in finite_dirac_deltas])
-        masses = np.array([dd.mass for dd in finite_dirac_deltas])
-        pos_min = float(positions[0])
-        pos_max = float(positions[-1])
-        edges = np.linspace(pos_min, pos_max, self.plotting_resolution + 1)
-        hist, _ = np.histogram(positions, bins=edges, weights=masses)
-        bin_widths = edges[1:] - edges[:-1]
-        self.positions = edges
-        self.masses = np.divide(
-            hist,
-            bin_widths,
-            out=np.zeros_like(hist, dtype=np.float64),
-            where=bin_widths != 0,
+        # For non-TTR input, use the non-uniform binning instead, which places one bin per Dirac delta with boundaries
+        # following the spacing of the Dirac deltas. This reads the input as a
+        # continuous distribution with no gaps in its support, whereas a
+        # uniform-width histogram leaves empty bins wherever the Dirac deltas are
+        # sparser than the bin width.
+        # A binning needs two bins, so it needs two Dirac deltas. The order is only
+        # 0 when the caller asked for a `plotting_resolution` of 2.
+        reduction_order = max(self.plotting_ttr_order, 1)
+        if len(finite_dirac_deltas) > 2**reduction_order:
+            # More Dirac deltas than the plot can resolve. Reduce them to
+            # (2 ** `reduction_order`) of them, which is the same number of Dirac
+            # deltas the valid-TTR path represents the value with, via the same two
+            # steps that path uses: bin the Dirac deltas without assuming a valid
+            # TTR, then take the TTR of that binning. Both steps preserve the total
+            # mass and the mean.
+            boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
+                finite_dirac_deltas, 0, False
+            )
+            finite_dirac_deltas = PlotData.bin_pdf_to_ttr(
+                boundary_positions,
+                bin_widths,
+                bin_heights,
+                reduction_order,
+            )
+
+        boundary_positions, bin_widths, bin_heights = (
+            PlotData.create_non_uniform_binning(finite_dirac_deltas)
         )
+
+        self.positions = boundary_positions
+        self.masses = bin_heights

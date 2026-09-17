@@ -45,7 +45,6 @@ benchmarks for UxHw Core microarchitectures Athens and Jupiter for precisions 8,
 python -m signaloid.benchmarking.automation \
     --path-to-application ./my-uxhw-app \
     --path-to-uxhw-sdk ~/project-uxhw-sdk \
-    --path-to-pin ~/pin-external-4.2 \
     -u Athens Jupiter \
     -s 8 16 32 \
     -c Disabled Autocorrelation \
@@ -53,7 +52,10 @@ python -m signaloid.benchmarking.automation \
 ```
 
 The tool needs access to the Signaloid UxHw SDK to build the applications for
-UxHw, and access to the Intel Pin tool for accurate benchmarking. Arguments
+UxHw. The Intel Pin tool is optional and off by default. Export `PIN_ROOT` and
+pass `--measure-dynamic-instructions` to also measure the dynamic instruction
+count. Without that flag the run never uses Pin, even when `PIN_ROOT` is set,
+and reports the count as missing. Arguments
 `-u/--representation-types`, `-s/--representation-sizes`,
 `-c/--uncertainty-correlation_types`, `-r/--reporting-methods` can also be
 supplied using a YAML file with `--config <file>`.
@@ -81,11 +83,13 @@ dist_value = DistributionalValue.parse(ux_binary_buffer)
 ### Create Distribution Plots
 Create plots to visualize distributional information by using the 
 [`plot` function](./src/signaloid/distributional_information_plotting/plot_wrapper.py) 
-with a `DistributionalValue` object containing Ux Data. The `plot` function is a 
-wrapper function for the `PlotHistogramDiracDeltas` class for plotting a 
-distributional value as a histogram with variable bin widths.
+with a `PlotData` object built from a `DistributionalValue` containing Ux Data. 
+The `plot` function is a wrapper function for the `PlotHistogramDiracDeltas` 
+class for plotting a distributional value as a histogram with variable bin 
+widths.
 
 ```python
+from signaloid.distributional_information_plotting.plot_histogram_dirac_deltas import PlotData
 from signaloid.distributional_information_plotting.plot_wrapper import plot
 
 # Intermediate code which writes to ux_string
@@ -93,5 +97,28 @@ from signaloid.distributional_information_plotting.plot_wrapper import plot
 
 # Create distributional value object from Ux String
 dist_value = DistributionalValue.parse(ux_string)
-plot(dist_value)
+plot(PlotData(dist_value))
 ```
+
+For plotting from raw samples, saving to a file, and the other `plot` options, 
+see the package [README.md](src/signaloid/distributional_information_plotting/README.md).
+
+### Sample from Ux Data
+Draw random samples from a distributional value with the 
+[`sample_generator` function](./src/signaloid/distributional_information_plotting/sample_generator.py). 
+Samples of the finite part of the distribution are drawn by inverse transform 
+sampling of the binned distribution. Distributions that also carry non-finite 
+mass (`NaN`, `-Inf`, `+Inf`) are sampled as a mixture, with each sample drawn 
+from the finite or the non-finite part in proportion to their masses.
+
+```python
+from signaloid.distributional_information_plotting.sample_generator import sample_generator
+
+# Intermediate code which writes to ux_string
+# ...
+
+samples = sample_generator(ux_string, n_samples=1000)
+```
+
+To sample from a `DistributionalValue` that is already parsed, use 
+`sample_from_distributional_value` from the same module.
