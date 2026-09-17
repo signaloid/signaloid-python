@@ -95,6 +95,40 @@ class TestConfigLayer(unittest.TestCase):
         self.assertEqual(args.reporting_methods, ["Quantile-95"])
         self.assertEqual(args.representation_types, ["Athens"])
 
+    def test_config_enables_dynamic_instructions(self) -> None:
+        # measure_dynamic_instructions is an argparse dest, so it is a valid
+        # config key. A YAML sweep can turn the measurement on without the
+        # flag being typed on the command line.
+        config = _base_config()
+        config["measure_dynamic_instructions"] = True
+        config_path = _write_config(self.tmp_path, config)
+        self._set_argv(["prog", "--config", config_path])
+
+        args = load_config(create_argument_parser())
+
+        self.assertTrue(args.measure_dynamic_instructions)
+
+    def test_config_defaults_dynamic_instructions_off(self) -> None:
+        config_path = _write_config(self.tmp_path, _base_config())
+        self._set_argv(["prog", "--config", config_path])
+
+        args = load_config(create_argument_parser())
+
+        self.assertFalse(args.measure_dynamic_instructions)
+
+    def test_stale_path_to_pin_config_key_rejected(self) -> None:
+        # --path-to-pin was removed. An old config still carrying it must
+        # fail loudly rather than being silently ignored, which would leave
+        # the user thinking PIN is still configured.
+        config = _base_config()
+        config["path_to_pin"] = "~/pin-external-4.2"
+        config_path = _write_config(self.tmp_path, config)
+        self._set_argv(["prog", "--config", config_path])
+
+        with self.assertRaises(ValueError) as caught:
+            load_config(create_argument_parser())
+        self.assertIn("path_to_pin", str(caught.exception))
+
     def test_config_sets_non_sweep_scalar(self) -> None:
         # Config keys are dest names: --num-adversaries has dest
         # n_adversaries, so the config key is n_adversaries (not the flag

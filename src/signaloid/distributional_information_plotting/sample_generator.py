@@ -144,8 +144,23 @@ def _sample_finite(
     """Sample from the finite part of a distributional value via inverse CDF."""
     distributional_value.drop_zero_mass_positions()
     distributional_value.combine_dirac_deltas()
+    finite_deltas = distributional_value.finite_dirac_deltas
+
+    if len(finite_deltas) == 0:
+        raise ValueError(
+            "sample_generator: the finite part of the distributional value carries "
+            "no mass, so there is nothing to sample from."
+        )
+
+    # Dropping zero-mass Dirac deltas and combining coincident ones can leave a
+    # single Dirac delta even when the input had many, e.g. when every Dirac
+    # delta shares one position. A lone Dirac delta has no binning to invert, so
+    # return identical copies of its position, as for a particle distribution.
+    if len(finite_deltas) == 1:
+        return np.full(n_samples, finite_deltas[0].position)
+
     boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
-        distributional_value.finite_dirac_deltas, 0, False
+        finite_deltas, 0, False
     )
     cdf_values = generate_cdf_values(boundary_positions, bin_widths, bin_heights)
     return generate_samples(cdf_values, boundary_positions, n_samples)

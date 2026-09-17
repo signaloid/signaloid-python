@@ -59,7 +59,28 @@ STRUCT_FORMATS: dict[str, dict[str, str]] = {
     },
 }
 
+# Representation type byte, as carried at offset 11 of the Ux Binary layout.
+# 0x00 is not a core: it is the "not stated" value, for a value assembled in
+# Python rather than read off a core (raw samples, a collapse result). Keeping
+# it as the constructor default matters because `TTR_NATIVE_UR_TYPES` below
+# makes the byte decide how a value is binned, and defaulting to a real core
+# would silently claim a provenance the value does not have.
+UR_TYPE_UNSPECIFIED = 0x00
 UR_TYPE_ATHENS = 0x04
+UR_TYPE_JUPITER = 0x06
+UR_TYPE_ATLAS = 0x07
+
+# Cores whose Dirac deltas are a TTR by construction. Their values should be
+# binned by the TTR route even when `check_is_full_valid_TTR` says otherwise:
+# curing and zero-mass dropping routinely leave such a value with a
+# non-power-of-2 Dirac count, which fails the check without making the value
+# any less TTR-shaped.
+#
+# Every other type — Jupiter, whose Dirac deltas are particles rather than a
+# TTR, and `UR_TYPE_UNSPECIFIED` — is left to `check_is_full_valid_TTR` to
+# route: the TTR binning when the value does happen to be a valid TTR, the
+# non-uniform binning when it does not.
+TTR_NATIVE_UR_TYPES: frozenset[int] = frozenset({UR_TYPE_ATHENS, UR_TYPE_ATLAS})
 
 # First byte of the Ux Binary Data format, used to distinguish it from the legacy format
 UX_BINARY_FORMAT_MARKER = 0xF0
@@ -69,7 +90,7 @@ class DistributionalValue:
     def __init__(
         self,
         particle_value: float | None = None,
-        UR_type: int = UR_TYPE_ATHENS,
+        UR_type: int = UR_TYPE_UNSPECIFIED,
         dirac_deltas: list[DiracDelta] | None = None,
         double_precision: bool = True,
     ) -> None:

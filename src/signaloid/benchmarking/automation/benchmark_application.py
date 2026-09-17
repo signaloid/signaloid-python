@@ -19,6 +19,7 @@
 #   DEALINGS IN THE SOFTWARE.
 
 import datetime
+import importlib.util
 import os
 import sys
 import traceback
@@ -62,6 +63,11 @@ from signaloid.benchmarking.automation.report_writer import (
 TOTAL_STEPS = 15
 LOG_FILE_PREFIX = "benchmarking_automation_error"
 
+# Top-level modules the Google Sheets upload imports (see report_writer's
+# write_results_to_spreadsheet and _get_credentials). They ship in the
+# optional `sheets` extra, so a plain `pip install .` leaves them absent.
+SHEETS_MODULE_NAMES = ("gspread", "googleapiclient", "oauth2client")
+
 
 def _use_color() -> bool:
     if os.environ.get("NO_COLOR"):
@@ -91,12 +97,28 @@ def _resolve_sheets_credentials(args: Namespace) -> str | None:
         ``None`` when the user opted out.
 
     Raises:
-        RuntimeError: If ``--write-sheets`` is set but no credentials file
-            resolves on disk, or the Drive folder / Sheets template IDs are
-            unset.
+        RuntimeError: If ``--write-sheets`` is set but the ``sheets`` extra
+            is not installed, no credentials file resolves on disk, or the
+            Drive folder / Sheets template IDs are unset.
     """
     if not args.write_sheets:
         return None
+    # The upload's dependencies are imported lazily inside
+    # write_results_to_spreadsheet, so without this check a missing `sheets`
+    # extra only surfaces at step 15, once the whole pipeline has run.
+    # find_spec locates the modules without importing them, keeping the
+    # opted-out path free of the extra's import cost.
+    missing_module_names = [
+        module_name
+        for module_name in SHEETS_MODULE_NAMES
+        if importlib.util.find_spec(module_name) is None
+    ]
+    if missing_module_names:
+        raise RuntimeError(
+            "--write-sheets requires the `sheets` extra, but "
+            f"{', '.join(missing_module_names)} could not be found. "
+            'Install it with: pip install ".[sheets]"'
+        )
     credentials_path = resolve_google_credentials_path(
         google_credentials=args.google_credentials,
     )
@@ -248,7 +270,7 @@ def _run_pipeline(args: Namespace, *, credentials_path: str | None) -> None:
     benchmark = Benchmark(
         path_to_application=args.path_to_application,
         path_to_uxhw_sdk=args.path_to_uxhw_sdk,
-        path_to_pin=args.path_to_pin,
+        measure_dynamic_instructions=(args.measure_dynamic_instructions),
         has_analytic_ground_truth=(args.has_analytic_ground_truth),
         path_to_ground_truth_file=(args.path_to_ground_truth_file),
         ground_truth_type=args.ground_truth_type,

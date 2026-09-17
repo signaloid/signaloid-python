@@ -273,15 +273,15 @@ def create_argument_parser() -> ArgumentParser:
     )
 
     parser.add_argument(
-        "--path-to-pin",
-        dest="path_to_pin",
-        type=str,
-        default=None,
+        "--measure-dynamic-instructions",
+        dest="measure_dynamic_instructions",
+        action="store_true",
         help=(
-            "Path to the Intel PIN kit (sets PIN_ROOT for the timing "
-            "script, which uses it to count dynamic instructions). When "
-            "omitted, an inherited PIN_ROOT is used. If neither is set "
-            "the timing run errors with 'Intel Pin not found'."
+            "Also measure dynamic instruction counts, using the Intel PIN "
+            "kit that PIN_ROOT points at. Off by default. This flag is the "
+            "only way to switch the measurement on, so a run without it "
+            "never invokes PIN even when PIN_ROOT is set. Passing it "
+            "without a usable PIN_ROOT is an error."
         ),
     )
 

@@ -546,9 +546,6 @@ def binned_wasserstein_1_uxhw_wrapper(
     # the finite_dirac_deltas access above).
     plot_interface = PlotData(binned_dist)
 
-    boundary_positions, bin_widths, bin_heights = PlotData.create_binning(
-        binned_dist.finite_dirac_deltas, 0, False
-    )
     if plot_interface.plotting_ttr_order is None:
         raise ValueError(
             "PlotData failed to resolve plotting_ttr_order for the input "
@@ -556,22 +553,17 @@ def binned_wasserstein_1_uxhw_wrapper(
             "Wasserstein-1."
         )
 
-    # Find the TTR of the created binning. This is always a valid TTR.
-    ttr = PlotData.bin_pdf_to_ttr(
-        boundary_positions,
-        bin_widths,
-        bin_heights,
-        plot_interface.plotting_ttr_order,
-    )
-    # Rebuild the binning from the valid TTR via the TTR binning method.
-    bin_boundaries, bin_widths, bin_heights = PlotData.create_binning(
-        ttr, plot_interface.plotting_ttr_order, True
-    )
-
+    # `PlotData` has already selected the binning that suits this input:
+    # the TTR binning route when the value is a full valid TTR, and the
+    # non-uniform binning (one bin per Dirac delta, boundaries following the
+    # Dirac spacing) when it is not. Recomputing the TTR route here
+    # unconditionally would bin a non-TTR value as though it were a TTR,
+    # which is exactly what `_construct_plot_data` avoids, and would leave
+    # the measured distance disagreeing with the plotted distribution.
     return wasserstein_1_between_distribution_and_samples(
-        bin_boundaries=list(bin_boundaries),
-        bin_heights=list(bin_heights),
-        bin_widths=list(bin_widths),
+        bin_boundaries=list(plot_interface.positions),
+        bin_heights=list(plot_interface.masses),
+        bin_widths=list(plot_interface.widths),
         sample_positions=list(ground_truth_dist.positions),
         sample_weights=list(ground_truth_dist.masses),
     )

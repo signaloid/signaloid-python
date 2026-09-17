@@ -134,7 +134,7 @@ class TimingMeasurements:
     pipeline phases. Owned by ``BenchmarkingVariable.timing_measurements``.
     """
 
-    measurement_dict: dict[str, dict[str, float]] = field(default_factory=dict)
+    measurement_dict: dict[str, dict[str, float | None]] = field(default_factory=dict)
 
     def append(
         self,
@@ -142,7 +142,7 @@ class TimingMeasurements:
         config: str,
         time: float,
         e2e_time: float,
-        pin_dyn_inst_count: float,
+        pin_dyn_inst_count: float | None = None,
         db_time: float = 0.0,
         db_dyn_inst_count: float = 0.0,
     ) -> None:
@@ -153,11 +153,13 @@ class TimingMeasurements:
             config: Configuration key (e.g. representation type string).
             time: In-application elapsed time in seconds.
             e2e_time: End-to-end elapsed time in seconds.
-            pin_dyn_inst_count: Dynamic instruction count from PIN.
+            pin_dyn_inst_count: Dynamic instruction count from PIN, or
+                ``None`` when the run was made without an Intel PIN kit.
+                Intel PIN is optional and off by default.
             db_time: Database-access time in seconds.
             db_dyn_inst_count: Dynamic instruction count for DB access.
         """
-        dictionary: dict[str, float] = {}
+        dictionary: dict[str, float | None] = {}
         dictionary["In Application Time"] = time
         dictionary["Database Time"] = db_time
         dictionary["End-to-End Time"] = e2e_time

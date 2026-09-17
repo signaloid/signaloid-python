@@ -27,15 +27,15 @@ from signaloid.benchmarking.types import BenchmarkingVariable
 from signaloid.benchmarking.config import (
     EquivMC,
     TimingFormat,
-    get_repo_root,
     get_resources_dir,
+    get_timing_script,
 )
 
 
 def export_timing_env(
     *,
     path_to_uxhw_sdk: str,
-    path_to_pin: str | None,
+    measure_dynamic_instructions: bool,
     path_to_application: str,
     application_name: str,
     application_version: str,
@@ -53,9 +53,11 @@ def export_timing_env(
 
     Args:
         path_to_uxhw_sdk: Path to the UxHw SDK.
-        path_to_pin: Path to the Intel PIN kit, exported as ``PIN_ROOT``.
-            ``None`` leaves any inherited ``PIN_ROOT`` in place. PIN is
-            mandatory, so the run errors if neither is set.
+        measure_dynamic_instructions: Whether to measure dynamic instruction
+            counts with Intel PIN. Off by default. When True the kit is
+            taken from ``PIN_ROOT``, which must already be set. When False
+            ``PIN_ROOT`` is removed from the environment, so an inherited
+            value cannot switch the measurement on behind the caller's back.
         path_to_application: Path to the application source tree.
         application_name: Application name (e.g. ``Finance-...``).
         application_version: Application version string.
@@ -70,14 +72,24 @@ def export_timing_env(
         ``TRACING_DB_ABS``). Callers should store it back to
         ``self.tracing_db_path``.
     """
-    os.environ["SIGNALOID_PYTHON_DIR"] = os.fspath(get_repo_root())
     os.environ["BENCHMARKING_RESOURCES_DIR"] = str(get_resources_dir())
     os.environ["PATH_TO_UXHW_SDK"] = path_to_uxhw_sdk
-    # PIN is mandatory: when no path is given we leave any shell-set
-    # PIN_ROOT in place. There is no built-in default. get-timings.sh
-    # will error clearly if neither is set.
-    if path_to_pin:
-        os.environ["PIN_ROOT"] = path_to_pin
+    # The flag is the single switch for the dynamic instruction count.
+    # Without it we drop PIN_ROOT, so a kit exported in the caller's shell
+    # profile cannot silently turn the measurement on. get-timings.sh reads
+    # the same variable and skips the count when it is absent.
+    if measure_dynamic_instructions:
+        pin_root = os.environ.get("PIN_ROOT", "")
+        if not pin_root:
+            raise ValueError(
+                "--measure-dynamic-instructions needs an Intel PIN kit, but "
+                "PIN_ROOT is not set. Export it to the kit directory, for "
+                "example 'export PIN_ROOT=~/pin-external-4.2', or drop the "
+                "flag to skip the dynamic instruction count."
+            )
+        os.environ["PIN_ROOT"] = os.path.expanduser(pin_root)
+    else:
+        os.environ.pop("PIN_ROOT", None)
     # The timing bash layer shells out to `python3 -m
     # signaloid.benchmarking...`. We pass our own interpreter so those
     # subprocesses use this venv (with the benchmarking dependencies) even when
@@ -200,6 +212,8 @@ def run_timing_script(
     if len(native_mc_sizes) == 0:
         native_mc_sizes = "50"
 
+    quoted_timing_script = shlex.quote(str(get_timing_script()))
+
     bash_cmd = f"""
 TRACES=(
 {traces_lines})
@@ -207,7 +221,7 @@ REFERENCE_PRECISIONS=({native_mc_sizes})
 REPRESENTATION_TYPES=({representations})
 REPRESENTATION_SIZES=({rep_sizes})
 CORRELATION_TRACKING_TYPES=({correlations_str})
-. $SIGNALOID_PYTHON_DIR/src/signaloid/benchmarking/benchmark_timing/get-timings.sh
+. {quoted_timing_script}
 """
     stderr_log = os.path.join(logs_dir, "timing_script_stderr.log")
     # Use tee so stderr streams to terminal
