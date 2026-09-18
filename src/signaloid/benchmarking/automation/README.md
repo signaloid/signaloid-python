@@ -326,8 +326,13 @@ output):
    `addDistValueTrace` `file:line` directives resolve against unoptimised debug
    info. Optimisation could change the traced values. To guard against that,
    each config is also built at `-O2` and its Ux strings are checked
-   (byte-for-byte) against the `-O0` ones. Any difference is reported as a
-   warning and does not stop the run. If a config's `-O2` build or run fails, that config is skipped and
+   (byte-for-byte) against the `-O0` ones. That build is compiled *without*
+   tracing, because the SDK forces `-O0` whenever tracing is on, so it has no
+   tracing database. Both sides are therefore read from the runs' stdout, where
+   printing an uncertain value emits its full Ux string. Any difference is
+   reported as a warning and does not stop the run. A config in which neither
+   build printed a Ux string is reported as a warning too, so a run that
+   verified nothing cannot be mistaken for a passing one. If a config's `-O2` build or run fails, that config is skipped and
    reported as failing in an `-O2 ux-string verification FAILED` summary (the
    run still continues). Set `TRACING_VERIFY_OPTFLAGS` to compare against a
    different level.

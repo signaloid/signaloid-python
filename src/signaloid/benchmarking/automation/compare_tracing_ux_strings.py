@@ -17,169 +17,133 @@
 #   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 #   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #   DEALINGS IN THE SOFTWARE.
-
 """
-Compare the Ux strings produced by two tracing runs of the same application.
+Compare the Ux strings two builds of the same application print to stdout.
 
-The benchmarking tracing pass compiles the application at ``-O0`` (the
-``OPTFLAGS`` default in ``Makefile.pro``) so the ``addDistValueTrace``
-``file:line`` directives resolve against unoptimised debug info. Real
-deployments compile at ``-O2``. Optimisation must not change the values the
-uncertainty machinery computes, so the Ux strings from the ``-O0`` and ``-O2``
-builds are expected to be byte-for-byte identical. This module loads the final
-(last-written) Ux string for each traced expression from two tracing DBs and
-reports any expression whose Ux string differs or is present in only one build.
+Optimisation must not change the values the
+uncertainty machinery computes, so the two builds' Ux strings are expected to
+be byte-for-byte identical.
+
+The values are read from each run's **stdout**, not from a tracing database.
+A tracing DB only exists when the ``opt`` pass is given ``--enable-tracing``,
+and the verification build is deliberately compiled without it. The SDK forces
+``OPTFLAGS`` back to ``-O0`` whenever tracing is on, which would defeat the
+point of building at ``-O2``.
+
+Ux strings are compared in the order printed. Everything else on stdout is
+ignored, which matters because ordinary output lines carry per-build paths
+(the stats DB filename, for one) that legitimately differ between the two runs.
 
 Invoked from the bash tracing layer (``get-timings.sh``) as::
 
     python3 -m signaloid.benchmarking.automation.compare_tracing_ux_strings \
-        <baseline_db> <candidate_db> [--table TABLE] [--config SUFFIX] \
+        <baseline_stdout> <candidate_stdout> [--config SUFFIX] \
         [--baseline-label O0] [--candidate-label O2]
 
-Exit status is ``0`` when the two builds produce identical Ux strings and
-non-zero when they differ or cannot be compared. The caller treats a non-zero
-status as a warning and continues.
+Exit status is ``0`` when the two builds produced identical Ux strings and
+non-zero when they differ, when neither printed any, or when the output could
+not be read. The caller treats a non-zero status as a warning and continues.
 """
 
 import argparse
-import sqlite3
+import re
 import sys
-from contextlib import closing
 
-from signaloid.benchmarking.config import EquivMC
+# A printed uncertain value renders as `Ux` followed by the hex encoding of its
+# representation. The leading type byte varies by representation (Athens, Mercury,
+# ...), so the pattern must not pin it to a particular value.
+_UX_STRING_PATTERN = re.compile(r"Ux[0-9A-Fa-f]+")
 
-# Table holding the per-execution emulator metadata, joined to the tracing
-# table on Execution_ID = Execution_Info_Table_ID (see merge_tracing_dbs).
-_EXECUTION_INFO_TABLE = "Emulator_Execution_Info"
-
-# Columns that together identify a single traced expression under one emulator
-# configuration. Two rows sharing these values are writes to the same logical
-# distributional value. The last such write is the final Ux string. This
-# mirrors the grouping keys _load_uxhw uses when picking the last write.
-_IDENTITY_COLUMNS = (
-    "Expression_DeclarationFileName",
-    "Expression_Subprogram",
-    "Expression_Name",
-    "Expression_DeclarationLineNumber",
-    "UR_Type",
-    "UR_Order",
-    "UR_Order_CoreLibrary",
-    "CorrelationTracking_Status",
-)
+# Cap on how much of a differing Ux string to print. A single Athens-16 value
+# is several hundred characters, and a systematic difference would otherwise
+# flood the build log.
+_REPORTED_MISMATCHES = 5
+_REPORTED_PREFIX_LENGTH = 80
 
 
-def _load_final_ux_strings(db_path: str, table: str) -> dict[tuple[object, ...], str]:
+def load_ux_strings(path: str) -> list[str]:
     """
-    Load the final Ux string for each traced expression from a tracing DB.
-
-    Joins *table* to ``Emulator_Execution_Info`` on the execution foreign key,
-    orders by ``rowid`` (insertion order), and keeps the last write per
-    identity group. A program can write a value, jump back, and overwrite it,
-    so the last write (not the highest PC / assignment index) is the final
-    value — matching ``_load_uxhw``'s ``.last()`` semantics.
+    Read every Ux string printed by one run, in the order it was printed.
 
     Args:
-        db_path: Path to the tracing SQLite database.
-        table: Name of the traced-values table (e.g. ``TracingTable``).
+        path: Path to the captured stdout of a single application run.
 
     Returns:
-        Mapping from the identity tuple (``_IDENTITY_COLUMNS`` order) to the
-        last-written ``Dist_Value`` for that expression.
+        The Ux strings found, in print order. Non-Ux output is ignored.
     """
-    identity_select = ", ".join(f't."{c}"' for c in _IDENTITY_COLUMNS[:4])
-    exec_select = ", ".join(f'e."{c}"' for c in _IDENTITY_COLUMNS[4:])
-    query = (
-        f"SELECT {identity_select}, {exec_select}, t.Dist_Value "
-        f'FROM "{table}" t '
-        f'JOIN "{_EXECUTION_INFO_TABLE}" e '
-        f"ON e.Execution_ID = t.Execution_Info_Table_ID "
-        f"ORDER BY t.rowid"
-    )
-    final: dict[tuple[object, ...], str] = {}
-    with closing(sqlite3.connect(db_path)) as connection:
-        for row in connection.execute(query):
-            key = tuple(row[: len(_IDENTITY_COLUMNS)])
-            # Insertion order is preserved by ORDER BY rowid, so overwriting
-            # here leaves the last write as the final value.
-            final[key] = row[len(_IDENTITY_COLUMNS)]
-    return final
+    with open(path, encoding="utf-8", errors="replace") as stream:
+        return _UX_STRING_PATTERN.findall(stream.read())
 
 
 class ComparisonResult:
-    """Outcome of comparing two tracing DBs' Ux strings."""
+    """Outcome of comparing two runs' printed Ux strings."""
 
     def __init__(
         self,
         *,
         matched: int,
-        mismatches: list[tuple[tuple[object, ...], str, str]],
-        only_in_baseline: list[tuple[object, ...]],
-        only_in_candidate: list[tuple[object, ...]],
+        mismatches: list[tuple[int, str, str]],
+        baseline_count: int,
+        candidate_count: int,
     ) -> None:
         self.matched = matched
         self.mismatches = mismatches
-        self.only_in_baseline = only_in_baseline
-        self.only_in_candidate = only_in_candidate
+        self.baseline_count = baseline_count
+        self.candidate_count = candidate_count
 
     @property
     def is_identical(self) -> bool:
-        """True when every expression matched and none was missing on a side."""
-        return (
-            not self.mismatches
-            and not self.only_in_baseline
-            and not self.only_in_candidate
-        )
+        """True when both runs printed the same Ux strings in the same order."""
+        return not self.mismatches and self.baseline_count == self.candidate_count
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        True when neither run printed a single Ux string.
+
+        :attr:`is_identical` is vacuously true in that case, because there is
+        nothing to mismatch and the two counts are equally zero. Callers must
+        check this first, or a run that printed nothing reads as a pass.
+        """
+        return self.is_identical and self.matched == 0
 
 
-def compare_ux_strings(
-    baseline_db: str, candidate_db: str, table: str
-) -> ComparisonResult:
+def compare_ux_strings(baseline_stdout: str, candidate_stdout: str) -> ComparisonResult:
     """
-    Compare the final Ux strings of two tracing DBs for the same application.
+    Compare the Ux strings printed by two builds of the same application.
 
     Args:
-        baseline_db: Path to the baseline (``-O0``) tracing DB.
-        candidate_db: Path to the candidate (``-O2``) tracing DB.
-        table: Name of the traced-values table in both DBs.
+        baseline_stdout: Captured stdout of the baseline (``-O0``) run.
+        candidate_stdout: Captured stdout of the candidate (``-O2``) run.
 
     Returns:
-        A :class:`ComparisonResult` describing matches, byte-level mismatches,
-        and expressions present in only one of the two builds.
+        A :class:`ComparisonResult` describing how many values matched and
+        which positions differed.
     """
-    baseline = _load_final_ux_strings(baseline_db, table)
-    candidate = _load_final_ux_strings(candidate_db, table)
+    baseline = load_ux_strings(baseline_stdout)
+    candidate = load_ux_strings(candidate_stdout)
 
     matched = 0
-    mismatches: list[tuple[tuple[object, ...], str, str]] = []
-    for key, baseline_value in baseline.items():
-        if key not in candidate:
-            continue
-        if candidate[key] == baseline_value:
+    mismatches: list[tuple[int, str, str]] = []
+    for index, (baseline_value, candidate_value) in enumerate(zip(baseline, candidate)):
+        if baseline_value == candidate_value:
             matched += 1
         else:
-            mismatches.append((key, baseline_value, candidate[key]))
-
-    only_in_baseline = [key for key in baseline if key not in candidate]
-    only_in_candidate = [key for key in candidate if key not in baseline]
+            mismatches.append((index, baseline_value, candidate_value))
 
     return ComparisonResult(
         matched=matched,
         mismatches=mismatches,
-        only_in_baseline=only_in_baseline,
-        only_in_candidate=only_in_candidate,
+        baseline_count=len(baseline),
+        candidate_count=len(candidate),
     )
 
 
-def _format_key(key: tuple[object, ...]) -> str:
-    """Render an identity tuple as ``expr @ file:line [UR_Type/UR_Order/...]``."""
-    fields = dict(zip(_IDENTITY_COLUMNS, key))
-    return (
-        f'{fields["Expression_Name"]} @ '
-        f'{fields["Expression_DeclarationFileName"]}:'
-        f'{fields["Expression_DeclarationLineNumber"]} '
-        f'[{fields["UR_Type"]}/{fields["UR_Order"]}/'
-        f'{fields["CorrelationTracking_Status"]}]'
-    )
+def _abbreviate(value: str) -> str:
+    """Shorten a Ux string for reporting, marking it when truncated."""
+    if len(value) <= _REPORTED_PREFIX_LENGTH:
+        return value
+    return f"{value[:_REPORTED_PREFIX_LENGTH]}... ({len(value)} chars)"
 
 
 def _report(
@@ -191,54 +155,61 @@ def _report(
 ) -> None:
     """Print a human-readable summary of *result* to stdout."""
     scope = f" for config '{config}'" if config else ""
+
+    if result.is_empty:
+        print(
+            f"WARNING: ux-string check{scope}: neither the {baseline_label} "
+            f"nor the {candidate_label} build printed any Ux string, so "
+            f"nothing was verified. Check that the application prints its "
+            f"uncertain values."
+        )
+        return
+
     if result.is_identical:
         print(
-            f"ux-string check{scope}: OK — {result.matched} traced "
-            f"expression(s) identical between {baseline_label} and "
+            f"ux-string check{scope}: OK — {result.matched} printed Ux "
+            f"string(s) identical between {baseline_label} and "
             f"{candidate_label} builds."
         )
         return
 
     print(
         f"WARNING: ux-string check{scope}: {baseline_label} and "
-        f"{candidate_label} builds produced different Ux strings "
+        f"{candidate_label} builds printed different Ux strings "
         f"({result.matched} identical, {len(result.mismatches)} differing, "
-        f"{len(result.only_in_baseline)} only in {baseline_label}, "
-        f"{len(result.only_in_candidate)} only in {candidate_label})."
+        f"{result.baseline_count} printed by {baseline_label}, "
+        f"{result.candidate_count} by {candidate_label})."
     )
-    for key, baseline_value, candidate_value in result.mismatches:
-        print(f"  DIFF {_format_key(key)}")
-        print(f"    {baseline_label}: {baseline_value}")
-        print(f"    {candidate_label}: {candidate_value}")
-    for key in result.only_in_baseline:
-        print(f"  ONLY IN {baseline_label}: {_format_key(key)}")
-    for key in result.only_in_candidate:
-        print(f"  ONLY IN {candidate_label}: {_format_key(key)}")
+    for index, baseline_value, candidate_value in result.mismatches[
+        :_REPORTED_MISMATCHES
+    ]:
+        print(f"  DIFF at printed value #{index}")
+        print(f"    {baseline_label}: {_abbreviate(baseline_value)}")
+        print(f"    {candidate_label}: {_abbreviate(candidate_value)}")
+    remaining = len(result.mismatches) - _REPORTED_MISMATCHES
+    if remaining > 0:
+        print(f"  ... and {remaining} further differing value(s)")
 
 
 def main() -> int:
     """
-    Parse arguments, compare the two tracing DBs, and report the result.
+    Parse arguments, compare the two runs' stdout, and report the result.
 
     Returns:
-        ``0`` when the two builds produced identical Ux strings, ``1`` when
-        they differed, and ``2`` when the comparison could not be performed
-        (e.g. a DB was missing or had an incompatible schema). The bash caller
-        treats any non-zero status as a warning and continues.
+        ``0`` when the two builds printed identical Ux strings, ``1`` when
+        they differed or when neither printed any, and ``2`` when the
+        comparison could not be performed (e.g. a stdout file was missing).
+        The bash caller treats any non-zero status as a warning and continues.
     """
     parser = argparse.ArgumentParser(
         description=(
-            "Compare the final Ux strings of two tracing DBs built at "
-            "different optimisation levels, warning on any byte-level difference."
+            "Compare the Ux strings printed by two builds of the same "
+            "application at different optimisation levels, warning on any "
+            "byte-level difference."
         ),
     )
-    parser.add_argument("baseline_db", help="Baseline (e.g. -O0) tracing DB.")
-    parser.add_argument("candidate_db", help="Candidate (e.g. -O2) tracing DB.")
-    parser.add_argument(
-        "--table",
-        default=EquivMC.TRACING_TABLE,
-        help=f"Traced-values table name (default: {EquivMC.TRACING_TABLE}).",
-    )
+    parser.add_argument("baseline_stdout", help="Captured stdout of the -O0 run.")
+    parser.add_argument("candidate_stdout", help="Captured stdout of the -O2 run.")
     parser.add_argument(
         "--baseline-label",
         default="O0",
@@ -257,11 +228,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        result = compare_ux_strings(args.baseline_db, args.candidate_db, args.table)
-    except (OSError, sqlite3.Error) as exc:
+        result = compare_ux_strings(args.baseline_stdout, args.candidate_stdout)
+    except OSError as exc:
         print(
             f"WARNING: ux-string check could not compare "
-            f"{args.baseline_db} and {args.candidate_db}: {exc}",
+            f"{args.baseline_stdout} and {args.candidate_stdout}: {exc}",
             file=sys.stderr,
         )
         return 2
@@ -272,7 +243,7 @@ def main() -> int:
         candidate_label=args.candidate_label,
         config=args.config,
     )
-    return 0 if result.is_identical else 1
+    return 0 if result.is_identical and not result.is_empty else 1
 
 
 if __name__ == "__main__":

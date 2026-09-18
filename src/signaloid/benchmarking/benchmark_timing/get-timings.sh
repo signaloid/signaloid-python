@@ -525,17 +525,20 @@ run_uxhw_tracing() {
     local tracing_dbs=()
     local tracing_configs=()
 
-    # -O2 verification: the tracing build uses -O0 (the OPTFLAGS default in
-    # Makefile.pro) so the addDistValueTrace file:line directives resolve
-    # against unoptimised debug info, but real deployments compile at -O2.
     # Optimisation must not change the values the uncertainty machinery
     # computes, so we build a parallel -O2 binary per config and later check
-    # (warn-only) that its Ux strings byte-match the -O0 ones. TRACING_VERIFY_OPTFLAGS
-    # overrides the level compared against; -gdwarf-4 is kept so tracing still resolves.
-    local verify_optflags="${TRACING_VERIFY_OPTFLAGS:-"-O2 -gdwarf-4"}"
+    # (warn-only) that its Ux strings byte-match the -O0 ones.
+    local verify_optflags="${TRACING_VERIFY_OPTFLAGS:-"-O2 -gdwarf-4 -fno-vectorize -fno-slp-vectorize"}"
+    # ENABLE_TRACING for each of the two builds. The tracing build sets ON so
+    # the SDK writes its per-config tracing DB. The verification build leaves it
+    # empty: the SDK forces OPTFLAGS back to -O0 when tracing is on, and it gates
+    # the flag on a non-empty value, so OFF would still trace. With no tracing DB
+    # of its own, this build's Ux strings are read from stdout instead.
+    local tracing_build_enable_tracing="ON"
+    local verify_build_enable_tracing=""
     local verify_binaries=()
-    local verify_dbs=()
-    local verify_baseline_dbs=()
+    local verify_stdouts=()
+    local verify_baseline_stdouts=()
     local verify_configs=()
     # Configs whose -O2 build or run failed: skipped for comparison and
     # reported (as failing) in the verification summary below.
@@ -566,7 +569,7 @@ run_uxhw_tracing() {
                     CORRELATION_TRACKING="$CORRELATION_TRACKING_TYPE"
                     M_CONFIG_FILE="$per_config_m"
                     TARGET_ARCH="$TARGET_ARCH"
-                    ENABLE_TRACING=ON
+                    ENABLE_TRACING="$tracing_build_enable_tracing"
                     ENABLE_UNCERTAIN_TYPE_MODIFIER="$ENABLE_UNCERTAIN_TYPE_MODIFIER"
                     STATS_DB_FILENAME="$per_config_db"
                     STATS_DB_TABLENAME="Emulator_Execution_Info"
@@ -597,7 +600,7 @@ run_uxhw_tracing() {
                     CORRELATION_TRACKING="$CORRELATION_TRACKING_TYPE"
                     M_CONFIG_FILE="$verify_m"
                     TARGET_ARCH="$TARGET_ARCH"
-                    ENABLE_TRACING=ON
+                    ENABLE_TRACING="$verify_build_enable_tracing"
                     ENABLE_UNCERTAIN_TYPE_MODIFIER="$ENABLE_UNCERTAIN_TYPE_MODIFIER"
                     STATS_DB_FILENAME="$verify_db"
                     STATS_DB_TABLENAME="Emulator_Execution_Info"
@@ -607,8 +610,8 @@ run_uxhw_tracing() {
                 if uxhw_make "${verify_args[@]}" && [[ -f "$PROGRAM" ]]; then
                     mv "$PROGRAM" "$verify_binary_name"
                     verify_binaries+=("$verify_binary_name")
-                    verify_dbs+=("$verify_db")
-                    verify_baseline_dbs+=("$per_config_db")
+                    verify_stdouts+=("$APPLICATION_PATH/src/$verify_binary_name.stdout")
+                    verify_baseline_stdouts+=("$APPLICATION_PATH/src/$binary_name.stdout")
                     verify_configs+=("$suffix")
                 else
                     warn "WARNING: verification build failed (OPTFLAGS='$verify_optflags') for config '$suffix'; skipping its Ux-string check."
@@ -673,20 +676,33 @@ run_uxhw_tracing() {
         if ! wait "${verify_pids[$i]}"; then
             warn "WARNING: -O2 verification run failed for config '${verify_configs[$i]}'; skipping its Ux-string check."
             verify_failed_configs+=("${verify_configs[$i]} (run failed)")
-            verify_dbs[$i]=""
+            verify_stdouts[$i]=""
         fi
     done
 
     cd "$APPLICATION_PATH/src"
 
-    # Phase 2.5: Verify the -O2 Ux strings byte-match the -O0 baseline. This is
-    # warn-only (guarded with `|| true`) and must run before the merge below,
-    # which consumes (deletes) the per-config baseline DBs.
-    for i in "${!verify_dbs[@]}"; do
-        [[ -z "${verify_dbs[$i]}" ]] && continue
+    # Cross-check that every Ux string the tracing run recorded in its DB was
+    # also printed by that same run. The -O2 check below compares stdout on
+    # both sides, which is only sound while the SDK prints the bytes it stores;
+    # this is what would catch that drifting. Warn-only, and must run before
+    # the merge below, which consumes the per-config DBs.
+    for i in "${!tracing_dbs[@]}"; do
+        PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+            "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.check_traced_values_printed \
+            "${tracing_dbs[$i]}" "$APPLICATION_PATH/src/${tracing_binaries[$i]}.stdout" \
+            --config "${tracing_configs[$i]}" || true
+    done
+
+    # Verify the -O2 Ux strings byte-match the -O0 baseline. Both
+    # sides are read from the runs' stdout, since the -O2 build has no tracing
+    # DB. This is warn-only (guarded with `|| true`) and must run before the
+    # cleanup below, which deletes the captured stdout.
+    for i in "${!verify_stdouts[@]}"; do
+        [[ -z "${verify_stdouts[$i]}" ]] && continue
         PYTHONPATH="$PACKAGE_IMPORT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
             "$BENCHMARKING_PYTHON" -m signaloid.benchmarking.automation.compare_tracing_ux_strings \
-            "${verify_baseline_dbs[$i]}" "${verify_dbs[$i]}" \
+            "${verify_baseline_stdouts[$i]}" "${verify_stdouts[$i]}" \
             --baseline-label O0 --candidate-label O2 --config "${verify_configs[$i]}" || true
     done
 
