@@ -25,7 +25,9 @@ import unittest
 
 import numpy as np
 from signaloid.distributional.dirac_delta import DiracDelta
-from signaloid.distributional.distributional import DistributionalValue
+from signaloid.distributional.distributional import (
+    DistributionalValue,
+)
 
 
 def read_string_bytes_pairs_from_csv(
@@ -71,8 +73,19 @@ def to_padded_ux_binary(ux_binary: bytes) -> bytes:
     Returns:
         The equivalent Ux Binary Data array.
     """
-    if len(ux_binary) >= 9 and ux_binary[8:11] == b"\xf0\x00\x00":
+    if (
+        len(ux_binary) >= 12
+        and ux_binary[8:11] == b"\xf0\x00\x00"
+        and ux_binary[11] != 0x00
+    ):
         return ux_binary
+
+    if ux_binary[8] == 0x00:
+        return ux_binary[:8] + b"\xf0\x00\x00\x04" + ux_binary[9:]
+
+    if ux_binary[8:12] == b"\xf0\x00\x00\x00":
+        return ux_binary[:8] + b"\xf0\x00\x00\x04" + ux_binary[12:]
+
     return ux_binary[:8] + b"\xf0\x00\x00" + ux_binary[8:]
 
 
@@ -1205,7 +1218,7 @@ class TestUxBinaryFormatDetection(unittest.TestCase):
 
     def _padded_format_hex(self) -> str:
         """The LEGACY_FORMAT_HEX value rewritten in the Ux Binary layout."""
-        return self.LEGACY_FORMAT_HEX[:16] + "f00000" + self.LEGACY_FORMAT_HEX[16:]
+        return self.LEGACY_FORMAT_HEX[:16] + "f0000004" + self.LEGACY_FORMAT_HEX[18:]
 
     def test_export_writes_format_marker(self) -> None:
         """`bytes(dist)` places 0xF0 0x00 0x00 right after the particle."""
@@ -1236,7 +1249,7 @@ class TestUxBinaryFormatDetection(unittest.TestCase):
         self.assertIsNotNone(parsed)
         assert parsed is not None
         self.assertEqual(parsed.particle_value, dist.particle_value)
-        self.assertEqual(parsed.UR_type, dist.UR_type)
+        self.assertEqual(parsed.UR_type, dist.UR_type if dist.UR_type != 0x00 else 0x04)
         np.testing.assert_array_equal(parsed.positions, dist.positions)
         np.testing.assert_array_equal(parsed.raw_masses, dist.raw_masses)
 
@@ -1249,7 +1262,9 @@ class TestUxBinaryFormatDetection(unittest.TestCase):
         self.assertIsNotNone(padded)
         assert legacy is not None and padded is not None
         self.assertEqual(legacy.particle_value, padded.particle_value)
-        self.assertEqual(legacy.UR_type, padded.UR_type)
+        self.assertEqual(
+            legacy.UR_type if legacy.UR_type != 0x00 else 0x04, padded.UR_type
+        )
         self.assertEqual(legacy.UR_order, padded.UR_order)
         np.testing.assert_array_equal(legacy.positions, padded.positions)
         np.testing.assert_array_equal(legacy.raw_masses, padded.raw_masses)

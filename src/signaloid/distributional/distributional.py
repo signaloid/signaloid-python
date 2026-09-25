@@ -718,6 +718,9 @@ class DistributionalValue:
             UxString += "Ux"
 
             fmt = STRUCT_FORMATS["str"]
+
+            # # Representation type (uint8_t)                     (1 byte)
+            buffer += struct.pack(fmt["UR_type"], self.UR_type)
         else:
             # Particle value (double)                           (8 bytes)
             particle_value = (
@@ -733,8 +736,11 @@ class DistributionalValue:
             # representation type.
             buffer += bytes([UX_BINARY_FORMAT_MARKER, 0x00, 0x00])
 
-        # Representation type (uint8_t)                     (1 byte)
-        buffer += struct.pack(fmt["UR_type"], self.UR_type)
+            # Representation type (uint8_t)                     (1 byte)
+            buffer += struct.pack(
+                fmt["UR_type"],
+                UR_TYPE_ATHENS if self.UR_type == UR_TYPE_UNSPECIFIED else self.UR_type,
+            )
 
         # Number of samples (uint64_t)                      (8 bytes)
         buffer += struct.pack(fmt["sample_count"], self.UR_order)
